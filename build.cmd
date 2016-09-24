@@ -191,10 +191,6 @@ call                                 "%__VSToolsRoot%\VsDevCmd.bat"
 
 @call %__ProjectDir%\run.cmd build -Project=%__ProjectDir%\build.proj -generateHeaderWindows -NativeVersionHeaderFile="%__RootBinDir%\obj\_version.h" %__RunArgs% %__UnprocessedBuildArgs% 
 
-rem Pickup latest Roslyn with byref locals and returns
-"%__ProjectDir%\Tools\dotnetcli\dotnet.exe" restore --source https://api.nuget.org/v3/index.json --packages "%__PackagesDir%" %__ProjectDir%\src\mscorlib\CSharp7\project.json"
-rem Robocopy "%__PackagesDir%\Microsoft.Net.Compilers\2.0.0-beta1\." "%__ProjectDir%\Tools\net45\roslyn\." /E
-
 REM =========================================================================================
 REM ===
 REM === Build the CLR VM
