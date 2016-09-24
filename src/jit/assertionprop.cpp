@@ -2049,6 +2049,13 @@ void Compiler::optAssertionGen(GenTreePtr tree)
             }
             break;
 
+        case GT_OBJ:
+        case GT_BLK:
+        case GT_DYN_BLK:
+            // TODO-1stClassStructs: These should always be considered to create a non-null
+            // assertion, but previously, when these indirections were implicit due to a block
+            // copy or init, they were not being considered to do so.
+            break;
         case GT_IND:
             // TODO-1stClassStructs: All indirections should be considered to create a non-null
             // assertion, but previously, when these indirections were implicit due to a block
@@ -3414,6 +3421,25 @@ GenTreePtr Compiler::optAssertionProp_Ind(ASSERT_VALARG_TP assertions, const Gen
 {
     assert(tree->OperIsIndir());
 
+    // TODO-1stClassStructs: All indirections should be handled here, but
+    // previously, when these indirections were GT_OBJ, or implicit due to a block
+    // copy or init, they were not being handled.
+    if (tree->TypeGet() == TYP_STRUCT)
+    {
+        if (tree->OperIsBlk())
+        {
+            return nullptr;
+        }
+        else
+        {
+            GenTree* parent = tree->gtGetParent(nullptr);
+            if ((parent != nullptr) && parent->OperIsBlkOp())
+            {
+                return nullptr;
+            }
+        }
+    }
+
     if (!(tree->gtFlags & GTF_EXCEPT))
     {
         return nullptr;
@@ -3674,6 +3700,21 @@ GenTreePtr Compiler::optAssertionProp_BndsChk(ASSERT_VALARG_TP assertions, const
 
     assert(tree->gtOper == GT_ARR_BOUNDS_CHECK);
 
+#ifdef FEATURE_ENABLE_NO_RANGE_CHECKS
+    if (JitConfig.JitNoRangeChks())
+    {
+#ifdef DEBUG
+        if (verbose)
+        {
+            printf("\nFlagging check redundant due to JitNoRangeChks in BB%02u:\n", compCurBB->bbNum);
+            gtDispTree(tree, nullptr, nullptr, true);
+        }
+#endif // DEBUG
+        tree->gtFlags |= GTF_ARR_BOUND_INBND;
+        return nullptr;
+    }
+#endif // FEATURE_ENABLE_NO_RANGE_CHECKS
+
     BitVecOps::Iter iter(apTraits, assertions);
     unsigned        index = 0;
     while (iter.NextElem(apTraits, &index))
@@ -3851,6 +3892,9 @@ GenTreePtr Compiler::optAssertionProp(ASSERT_VALARG_TP assertions, const GenTree
         case GT_LCL_VAR:
             return optAssertionProp_LclVar(assertions, tree, stmt);
 
+        case GT_OBJ:
+        case GT_BLK:
+        case GT_DYN_BLK:
         case GT_IND:
         case GT_NULLCHECK:
             return optAssertionProp_Ind(assertions, tree, stmt);
@@ -4815,11 +4859,8 @@ void Compiler::optVnNonNullPropCurStmt(BasicBlock* block, GenTreePtr stmt, GenTr
     {
         newTree = optNonNullAssertionProp_Call(empty, tree, stmt);
     }
-    else if (tree->OperGet() == GT_IND || tree->OperGet() == GT_NULLCHECK)
+    else if (tree->OperIsIndir())
     {
-        // TODO-1stClassStructs: All indirections should be handled here, but
-        // previously, when these indirections were GT_OBJ, or implicit due to a block
-        // copy or init, they were not being handled.
         newTree = optAssertionProp_Ind(empty, tree, stmt);
     }
     if (newTree)

@@ -119,11 +119,6 @@ Compiler::fgWalkResult Compiler::gsMarkPtrsAndAssignGroups(GenTreePtr* pTree, fg
     switch (tree->OperGet())
     {
         // Indirections - look for *p uses and defs
-        case GT_INITBLK:
-        case GT_COPYOBJ:
-        case GT_COPYBLK:
-            fIsBlk = true;
-        // fallthrough
         case GT_IND:
         case GT_OBJ:
         case GT_ARR_ELEM:
@@ -133,22 +128,8 @@ Compiler::fgWalkResult Compiler::gsMarkPtrsAndAssignGroups(GenTreePtr* pTree, fg
 
             newState.isUnderIndir = true;
             {
-                if (fIsBlk)
-                {
-                    // Blk nodes have implicit indirections.
-                    comp->fgWalkTreePre(&tree->gtOp.gtOp1, comp->gsMarkPtrsAndAssignGroups, (void*)&newState);
-
-                    if (tree->OperGet() == GT_INITBLK)
-                    {
-                        newState.isUnderIndir = false;
-                    }
-                    comp->fgWalkTreePre(&tree->gtOp.gtOp2, comp->gsMarkPtrsAndAssignGroups, (void*)&newState);
-                }
-                else
-                {
-                    newState.skipNextNode = true; // Don't have to worry about which kind of node we're dealing with
-                    comp->fgWalkTreePre(&tree, comp->gsMarkPtrsAndAssignGroups, (void*)&newState);
-                }
+                newState.skipNextNode = true; // Don't have to worry about which kind of node we're dealing with
+                comp->fgWalkTreePre(&tree, comp->gsMarkPtrsAndAssignGroups, (void*)&newState);
             }
 
             return WALK_SKIP_SUBTREES;
@@ -253,21 +234,37 @@ Compiler::fgWalkResult Compiler::gsMarkPtrsAndAssignGroups(GenTreePtr* pTree, fg
                 bool isLocVar;
                 bool isLocFld;
 
-                // Walk dst side
-                comp->fgWalkTreePre(&tree->gtOp.gtOp1, comp->gsMarkPtrsAndAssignGroups, (void*)&newState);
-
-                // Now handle src side
-                isLocVar = tree->gtOp.gtOp1->OperGet() == GT_LCL_VAR;
-                isLocFld = tree->gtOp.gtOp1->OperGet() == GT_LCL_FLD;
-
-                if ((isLocVar || isLocFld) && tree->gtOp.gtOp2)
+                if (tree->OperIsBlkOp())
                 {
-                    lclNum               = tree->gtOp.gtOp1->gtLclVarCommon.gtLclNum;
-                    newState.lvAssignDef = lclNum;
-                    newState.isAssignSrc = true;
-                }
+                    // Blk assignments are always handled as if they have implicit indirections.
+                    // TODO-1stClassStructs: improve this.
+                    newState.isUnderIndir = true;
+                    comp->fgWalkTreePre(&tree->gtOp.gtOp1, comp->gsMarkPtrsAndAssignGroups, (void*)&newState);
 
-                comp->fgWalkTreePre(&tree->gtOp.gtOp2, comp->gsMarkPtrsAndAssignGroups, (void*)&newState);
+                    if (tree->OperIsInitBlkOp())
+                    {
+                        newState.isUnderIndir = false;
+                    }
+                    comp->fgWalkTreePre(&tree->gtOp.gtOp2, comp->gsMarkPtrsAndAssignGroups, (void*)&newState);
+                }
+                else
+                {
+                    // Walk dst side
+                    comp->fgWalkTreePre(&tree->gtOp.gtOp1, comp->gsMarkPtrsAndAssignGroups, (void*)&newState);
+
+                    // Now handle src side
+                    isLocVar = tree->gtOp.gtOp1->OperGet() == GT_LCL_VAR;
+                    isLocFld = tree->gtOp.gtOp1->OperGet() == GT_LCL_FLD;
+
+                    if ((isLocVar || isLocFld) && tree->gtOp.gtOp2)
+                    {
+                        lclNum               = tree->gtOp.gtOp1->gtLclVarCommon.gtLclNum;
+                        newState.lvAssignDef = lclNum;
+                        newState.isAssignSrc = true;
+                    }
+
+                    comp->fgWalkTreePre(&tree->gtOp.gtOp2, comp->gsMarkPtrsAndAssignGroups, (void*)&newState);
+                }
 
                 return WALK_SKIP_SUBTREES;
             }

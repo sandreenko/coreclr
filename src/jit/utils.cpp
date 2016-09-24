@@ -876,7 +876,7 @@ void ConfigMethodRange::InitRanges(const wchar_t* rangeStr, unsigned capacity)
 
 #endif // defined(DEBUG) || defined(INLINE_DATA)
 
-#if CALL_ARG_STATS || COUNT_BASIC_BLOCKS || COUNT_LOOPS || EMITTER_STATS || MEASURE_NODE_SIZE
+#if CALL_ARG_STATS || COUNT_BASIC_BLOCKS || COUNT_LOOPS || EMITTER_STATS || MEASURE_NODE_SIZE || MEASURE_MEM_ALLOC
 
 /*****************************************************************************
  *  Histogram class.
@@ -896,7 +896,10 @@ Histogram::Histogram(IAllocator* allocator, const unsigned* const sizeTable)
 
 Histogram::~Histogram()
 {
-    m_allocator->Free(m_counts);
+    if (m_counts != nullptr)
+    {
+        m_allocator->Free(m_counts);
+    }
 }
 
 // We need to lazy allocate the histogram data so static `Histogram` variables don't try to
@@ -1236,8 +1239,6 @@ void HelperCallProperties::init()
             case CORINFO_HELP_LRSH:
             case CORINFO_HELP_LRSZ:
             case CORINFO_HELP_LMUL:
-            case CORINFO_HELP_ULDIV:
-            case CORINFO_HELP_ULMOD:
             case CORINFO_HELP_LNG2DBL:
             case CORINFO_HELP_ULNG2DBL:
             case CORINFO_HELP_DBL2INT:
@@ -1264,9 +1265,12 @@ void HelperCallProperties::init()
                                     // mod -1,
             case CORINFO_HELP_MOD:  // which is not representable as a positive integer.
             case CORINFO_HELP_UMOD:
+            case CORINFO_HELP_ULMOD:
 
             case CORINFO_HELP_UDIV: // Divs throw divide-by-zero.
+            case CORINFO_HELP_DIV:
             case CORINFO_HELP_LDIV:
+            case CORINFO_HELP_ULDIV:
 
             case CORINFO_HELP_LMUL_OVF:
             case CORINFO_HELP_ULMUL_OVF:

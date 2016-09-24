@@ -15,6 +15,7 @@ def static getOSGroup(def os) {
     def osGroupMap = ['Ubuntu':'Linux',
         'RHEL7.2': 'Linux',
         'Ubuntu16.04': 'Linux',
+        'Ubuntu16.10': 'Linux',
         'Debian8.4':'Linux',
         'Fedora23':'Linux',
         'OSX':'OSX',
@@ -35,7 +36,7 @@ class Constants {
     // The Windows_NT_BuildOnly OS is a way to speed up the Non-NT builds temporarily by avoiding
     // test execution in the build flow runs.  It generates the exact same build
     // as Windows_NT but without the tests.
-    def static osList = ['Ubuntu', 'Debian8.4', 'OSX', 'Windows_NT', 'Windows_NT_BuildOnly', 'FreeBSD', 'CentOS7.1', 'OpenSUSE13.2', 'OpenSUSE42.1', 'RHEL7.2', 'LinuxARMEmulator', 'Ubuntu16.04', 'Fedora23']
+    def static osList = ['Ubuntu', 'Debian8.4', 'OSX', 'Windows_NT', 'Windows_NT_BuildOnly', 'FreeBSD', 'CentOS7.1', 'OpenSUSE13.2', 'OpenSUSE42.1', 'RHEL7.2', 'LinuxARMEmulator', 'Ubuntu16.04', 'Ubuntu16.10', 'Fedora23']
     def static crossList = ['Ubuntu', 'OSX', 'CentOS7.1', 'RHEL7.2', 'Debian8.4', 'OpenSUSE13.2']
     // This is a set of JIT stress modes combined with the set of variables that
     // need to be set to actually enable that stress mode.  The key of the map is the stress mode and
@@ -76,7 +77,7 @@ class Constants {
                                         'r2r_jitstressregs4', 'r2r_jitstressregs8', 'r2r_jitstressregsx10', 'r2r_jitstressregsx80',
                                         'r2r_jitminopts', 'r2r_jitforcerelocs']
     // This is the basic set of scenarios
-    def static basicScenarios = ['default', 'pri1', 'ilrt', 'r2r', 'pri1r2r', 'gcstress15_pri1r2r', 'longgc', 'coverage', 'gcsimulator'] + r2rJitStressScenarios
+    def static basicScenarios = ['default', 'pri1', 'ilrt', 'r2r', 'pri1r2r', 'gcstress15_pri1r2r', 'longgc', 'coverage', 'formatting', 'gcsimulator'] + r2rJitStressScenarios
     def static configurationList = ['Debug', 'Checked', 'Release']
     // This is the set of architectures
     def static architectureList = ['arm', 'arm64', 'x64', 'x86ryujit', 'x86lb']
@@ -248,6 +249,10 @@ def static getJobName(def configuration, def architecture, def os, def scenario,
             if (scenario == 'default') {
                 // For now we leave x64 off of the name for compatibility with other jobs
                 baseName = configuration.toLowerCase() + '_' + os.toLowerCase()
+            }
+            else if (scenario == 'formatting') {
+                // we don't care about the configuration for the formatting job. It runs all configs
+                baseName = architecture.toLowerCase() + '_' + os.toLowerCase()
             }
             else {
                 baseName = architecture.toLowerCase() + '_' + configuration.toLowerCase() + '_' + os.toLowerCase()
@@ -454,6 +459,11 @@ def static addTriggers(def job, def branch, def isPR, def architecture, def os, 
                 assert architecture == 'x64'
                 Utilities.addPeriodicTrigger(job, '@weekly')
                 break
+            case 'formatting':
+                assert (os == 'Windows_NT' || os == "Ubuntu")
+                assert architecture == 'x64'
+                Utilities.addGithubPushTrigger(job)
+                break
             case 'jitstressregs1':
             case 'jitstressregs2':
             case 'jitstressregs3':
@@ -543,6 +553,15 @@ def static addTriggers(def job, def branch, def isPR, def architecture, def os, 
                 }
                 break
             }
+
+            if (scenario == 'formatting') {
+                assert configuration == 'Checked'
+                if (os == 'Windows_NT' || os == 'Ubuntu') {
+                    Utilities.addGithubPRTriggerForBranch(job, branch, "${os} ${architecture} Formatting")
+                }
+                break
+            }
+
             switch (os) {
                 // OpenSUSE, Debian & RedHat get trigger phrases for pri 0 build, and pri 1 build & test
                 case 'OpenSUSE13.2':
@@ -559,6 +578,7 @@ def static addTriggers(def job, def branch, def isPR, def architecture, def os, 
                     break
                 case 'Fedora23':
                 case 'Ubuntu16.04':
+                case 'Ubuntu16.10':
                 case 'OpenSUSE42.1':
                     assert !isFlowJob
                     assert scenario == 'default'
@@ -1641,6 +1661,21 @@ combinedScenarios.each { scenario ->
                                     return
                                 }
                                 break
+                            // We only run Windows and Ubuntu x64 Checked for formatting right now
+                            case 'formatting':
+                                if (os != 'Windows_NT' && os != 'Ubuntu') {
+                                    return
+                                }
+                                if (architecture != 'x64') {
+                                    return
+                                }
+                                if (configuration != 'Checked') {
+                                    return
+                                }
+                                if (isBuildOnly) {
+                                    return
+                                }
+                                break
                             case 'default':
                                 // Nothing skipped
                                 break
@@ -1705,6 +1740,10 @@ combinedScenarios.each { scenario ->
                                     else if (isLongGc(scenario)) {
                                         buildCommands += "build.cmd ${lowerConfiguration} ${arch} skiptests"
                                         buildCommands += "set __TestIntermediateDir=int&&build-test.cmd ${lowerConfiguration} ${arch}"
+                                    }
+                                    else if (scenario == 'formatting') {
+                                        buildCommands += "python -u tests\\scripts\\format.py -c %WORKSPACE% -o Windows_NT -a ${arch}"
+                                        break
                                     }
                                     else {
                                         println("Unknown scenario: ${scenario}")
@@ -1884,6 +1923,7 @@ combinedScenarios.each { scenario ->
                             break
                         case 'Ubuntu':
                         case 'Ubuntu16.04':
+                        case 'Ubuntu16.10':
                         case 'Debian8.4':
                         case 'OSX':
                         case 'FreeBSD':
@@ -1899,6 +1939,11 @@ combinedScenarios.each { scenario ->
                                     def arch = architecture
                                     if (architecture == 'x86ryujit' || architecture == 'x86lb') {
                                         arch = 'x86'
+                                    }
+
+                                    if (scenario == 'formatting') {
+                                        buildCommands += "python tests/scripts/format.py -c \${WORKSPACE} -o Linux -a ${arch}"
+                                        break
                                     }
                                 
                                     if (!enableCorefxTesting) {
@@ -2167,6 +2212,8 @@ combinedScenarios.each { scenario ->
                                 if (configuration != 'Release') {
                                     return
                                 }
+                            case 'formatting':
+                                return
                             case 'default':
                                 // Nothing skipped
                                 break
@@ -2522,3 +2569,8 @@ build(params + [CORECLR_BUILD: coreclrBuildJob.build.number,
 } // scenario
 
 JobReport.Report.generateJobReport(out)
+
+// Make the call to generate the help job
+Utilities.createHelperJob(this, project, branch,
+    "Welcome to the ${project} Repository",  // This is prepended to the help message
+    "Have a nice day!")  // This is appended to the help message.  You might put known issues here.

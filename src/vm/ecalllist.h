@@ -224,7 +224,7 @@ FCFuncStart(gStringFuncs)
     FCIntrinsic("get_Length", COMString::Length, CORINFO_INTRINSIC_StringLength)
     FCIntrinsic("get_Chars", COMString::GetCharAt, CORINFO_INTRINSIC_StringGetChar)
     FCFuncElement("IsAscii", COMString::IsAscii)
-    FCFuncElement("nativeCompareOrdinalEx", COMString::CompareOrdinalEx)
+    FCFuncElement("CompareOrdinalHelper", COMString::CompareOrdinalEx)
     FCFuncElement("IndexOfAny", COMString::IndexOfCharArray)
     FCFuncElement("LastIndexOfAny", COMString::LastIndexOfCharArray)
     FCFuncElementSig("ReplaceInternal", &gsig_IM_Str_Str_RetStr, COMString::ReplaceString)
@@ -369,13 +369,13 @@ FCFuncStart(gSafeBufferFuncs)
     FCFuncElement("StructureToPtrNative", SafeBuffer::StructureToPtr)
 FCFuncEnd()
 
-#ifndef FEATURE_CORECLR
+#ifndef FEATURE_COREFX_GLOBALIZATION
 FCFuncStart(gNormalizationFuncs)
     FCFuncElement("nativeNormalizationIsNormalizedString", COMNlsInfo::nativeNormalizationIsNormalizedString)
     FCFuncElement("nativeNormalizationNormalizeString", COMNlsInfo::nativeNormalizationNormalizeString)
     QCFuncElement("nativeNormalizationInitNormalization", COMNlsInfo::nativeNormalizationInitNormalization)
 FCFuncEnd()
-#endif // FEATURE_CORECLR
+#endif // FEATURE_COREFX_GLOBALIZATION
 
 FCFuncStart(gTypedReferenceFuncs)
     FCFuncElement("InternalToObject", ReflectionInvocation::TypedReferenceToObject)
@@ -1165,9 +1165,9 @@ FCFuncStart(gAssemblyNameFuncs)
     FCFuncElement("nGetPublicKeyToken", AssemblyNameNative::GetPublicKeyToken)
 #ifndef FEATURE_CORECLR
     FCFuncElement("EscapeCodeBase", AssemblyNameNative::EscapeCodeBase)
+#endif // !FEATURE_CORECLR
     FCFuncElement("ReferenceMatchesDefinitionInternal", AssemblyNameNative::ReferenceMatchesDefinition)
     FCFuncElement("nGetFileInformation", AssemblyNameNative::GetFileInformation)
-#endif // !FEATURE_CORECLR 
 FCFuncEnd()
 
 FCFuncStart(gLoaderAllocatorFuncs)
@@ -1564,13 +1564,12 @@ FCFuncStart(gGCInterfaceFuncs)
     FCFuncElement("_SuppressFinalize", GCInterface::SuppressFinalize)
     FCFuncElement("_ReRegisterForFinalize", GCInterface::ReRegisterForFinalize)
     
+    FCFuncElement("_GetAllocatedBytesForCurrentThread", GCInterface::GetAllocatedBytesForCurrentThread)
 FCFuncEnd()
 
-#ifndef FEATURE_CORECLR
 FCFuncStart(gMemoryFailPointFuncs)
     FCFuncElement("GetMemorySettings", COMMemoryFailPoint::GetMemorySettings)
 FCFuncEnd()
-#endif // FEATURE_CORECLR
 
 FCFuncStart(gInteropMarshalFuncs)
     FCFuncElement("GetLastWin32Error", MarshalNative::GetLastWin32Error)
@@ -1828,8 +1827,8 @@ FCFuncStart(gCompilerFuncs)
     FCFuncElement("GetObjectValue", ObjectNative::GetObjectValue)
     FCIntrinsic("InitializeArray", ArrayNative::InitializeArray, CORINFO_INTRINSIC_InitializeArray)
     FCFuncElement("_RunClassConstructor", ReflectionInvocation::RunClassConstructor)
-#ifndef FEATURE_CORECLR
     FCFuncElement("_RunModuleConstructor", ReflectionInvocation::RunModuleConstructor)
+#ifndef FEATURE_CORECLR
     FCFuncElement("_PrepareMethod", ReflectionInvocation::PrepareMethod)
 #endif // !FEATURE_CORECLR
     QCFuncElement("_CompileMethod", ReflectionInvocation::CompileMethod)
@@ -1842,9 +1841,7 @@ FCFuncStart(gCompilerFuncs)
     FCFuncElement("GetHashCode", ObjectNative::GetHashCode)
     FCFuncElement("Equals", ObjectNative::Equals)
     FCFuncElement("EnsureSufficientExecutionStack", ReflectionInvocation::EnsureSufficientExecutionStack)
-#ifdef FEATURE_CORECLR
     FCFuncElement("TryEnsureSufficientExecutionStack", ReflectionInvocation::TryEnsureSufficientExecutionStack)
-#endif // FEATURE_CORECLR
 FCFuncEnd()
 
 FCFuncStart(gContextSynchronizationFuncs)
@@ -2257,9 +2254,7 @@ FCClassElement("Math", "System", gMathFuncs)
 #ifdef MDA_SUPPORTED 
 FCClassElement("Mda", "System", gMda)
 #endif
-#ifndef FEATURE_CORECLR
 FCClassElement("MemoryFailPoint", "System.Runtime", gMemoryFailPointFuncs)
-#endif // FEATURE_CORECLR
 #ifdef FEATURE_REMOTING    
 FCClassElement("Message", "System.Runtime.Remoting.Messaging", gMessageFuncs)
 #endif    
@@ -2279,9 +2274,9 @@ FCClassElement("MngdSafeArrayMarshaler", "System.StubHelpers", gMngdSafeArrayMar
 FCClassElement("ModuleBuilder", "System.Reflection.Emit", gCOMModuleBuilderFuncs)
 FCClassElement("ModuleHandle", "System", gCOMModuleHandleFuncs)
 FCClassElement("Monitor", "System.Threading", gMonitorFuncs)
-#ifndef FEATURE_CORECLR
+#ifndef FEATURE_COREFX_GLOBALIZATION
 FCClassElement("Normalization", "System.Text", gNormalizationFuncs)
-#endif // FEATURE_CORECLR
+#endif // FEATURE_COREFX_GLOBALIZATION
 FCClassElement("Number", "System", gNumberFuncs)
 #ifdef FEATURE_COMINTEROP
 FCClassElement("OAVariantLib", "Microsoft.Win32", gOAVariantFuncs)

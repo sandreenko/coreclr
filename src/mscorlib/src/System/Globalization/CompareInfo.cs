@@ -322,10 +322,12 @@ namespace System.Globalization {
             get
             {
                 Contract.Assert(m_name != null, "CompareInfo.Name Expected m_name to be set");
+#if !FEATURE_CORECLR
                 if (m_name == "zh-CHT" || m_name == "zh-CHS")
                 {
                     return m_name;
                 }
+#endif // FEATURE_CORECLR
 
                 return (m_sortName);
             }
@@ -528,25 +530,12 @@ namespace System.Globalization {
 
             if (options == CompareOptions.Ordinal)
             {
-                return CompareOrdinal(string1, offset1, length1,
-                                      string2, offset2, length2);
+                return string.CompareOrdinalHelper(string1, offset1, length1, string2, offset2, length2);
             }
             return InternalCompareString(this.m_dataHandle, this.m_handleOrigin, this.m_sortName, 
                                          string1, offset1, length1, 
                                          string2, offset2, length2, 
                                          GetNativeCompareFlags(options));
-        }
-
-        [System.Security.SecurityCritical]
-        private static int CompareOrdinal(string string1, int offset1, int length1, string string2, int offset2, int length2)
-        {
-            int result = String.nativeCompareOrdinalEx(string1, offset1, string2, offset2,
-                                                       (length1 < length2 ? length1 : length2));
-            if ((length1 != length2) && result == 0)
-            {
-                return (length1 > length2 ? 1 : -1);
-            }
-            return (result);
         }
 
         ////////////////////////////////////////////////////////////////////////

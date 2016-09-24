@@ -190,12 +190,13 @@ void LIR::Use::ReplaceWith(Compiler* compiler, GenTree* replacement)
     assert(IsDummyUse() || m_range->Contains(m_user));
     assert(m_range->Contains(replacement));
 
-    GenTree* replacedNode = *m_edge;
-
-    *m_edge = replacement;
-    if (!IsDummyUse() && m_user->IsCall())
+    if (!IsDummyUse())
     {
-        compiler->fgFixupArgTabEntryPtr(m_user, replacedNode, replacement);
+        m_user->ReplaceOperand(m_edge, replacement);
+    }
+    else
+    {
+        *m_edge = replacement;
     }
 }
 
@@ -678,7 +679,7 @@ void LIR::Range::FinishInsertBefore(GenTree* insertionPoint, GenTree* first, Gen
             assert(m_lastNode != nullptr);
             assert(m_lastNode->gtNext == nullptr);
             m_lastNode->gtNext = first;
-            first->gtPrev = m_lastNode;
+            first->gtPrev      = m_lastNode;
         }
         m_lastNode = last;
     }
@@ -866,7 +867,7 @@ void LIR::Range::FinishInsertAfter(GenTree* insertionPoint, GenTree* first, GenT
             assert(m_firstNode != nullptr);
             assert(m_firstNode->gtPrev == nullptr);
             m_firstNode->gtPrev = last;
-            last->gtNext = m_firstNode;
+            last->gtNext        = m_firstNode;
         }
         m_firstNode = first;
     }
@@ -1157,7 +1158,6 @@ void LIR::Range::Delete(Compiler* compiler, BasicBlock* block, ReadOnlyRange&& r
     Delete(compiler, block, range.m_firstNode, range.m_lastNode);
 }
 
-
 //------------------------------------------------------------------------
 // LIR::Range::TryGetUse: Try to find the use for a given node.
 //
@@ -1264,7 +1264,6 @@ LIR::ReadOnlyRange LIR::Range::GetMarkedRange(unsigned  markCount,
             for (GenTree* operand : firstNode->Operands())
             {
                 // Do not mark nodes that do not appear in the execution order
-                assert(operand->OperGet() != GT_LIST);
                 if (operand->OperGet() == GT_ARGPLACE)
                 {
                     continue;
@@ -1569,10 +1568,12 @@ LIR::Range LIR::EmptyRange()
 }
 
 //------------------------------------------------------------------------
-// LIR::SeqTree: Given a newly created, unsequenced HIR tree, set the evaluation
-// order (call gtSetEvalOrder) and sequence the tree (set gtNext/gtPrev pointers
-// by calling fgSetTreeSeq), and return a Range representing the list of nodes.
-// It is expected this will later be spliced into the LIR graph.
+// LIR::SeqTree:
+//    Given a newly created, unsequenced HIR tree, set the evaluation
+//    order (call gtSetEvalOrder) and sequence the tree (set gtNext/gtPrev
+//    pointers by calling fgSetTreeSeq), and return a Range representing
+//    the list of nodes. It is expected this will later be spliced into
+//    an LIR range.
 //
 // Arguments:
 //    compiler - The Compiler context.
@@ -1589,4 +1590,50 @@ LIR::Range LIR::SeqTree(Compiler* compiler, GenTree* tree)
 
     compiler->gtSetEvalOrder(tree);
     return Range(compiler->fgSetTreeSeq(tree, nullptr, true), tree);
+}
+
+//------------------------------------------------------------------------
+// LIR::InsertBeforeTerminator:
+//    Insert an LIR range before the terminating instruction in the given
+//    basic block. If the basic block has no terminating instruction (i.e.
+//    it has a jump kind that is not `BBJ_RETURN`, `BBJ_COND`, or
+//    `BBJ_SWITCH`), the range is inserted at the end of the block.
+//
+// Arguments:
+//    block - The block in which to insert the range.
+//    range - The range to insert.
+//
+void LIR::InsertBeforeTerminator(BasicBlock* block, LIR::Range&& range)
+{
+    LIR::Range& blockRange = LIR::AsRange(block);
+
+    GenTree* insertionPoint = nullptr;
+    if ((block->bbJumpKind == BBJ_COND) || (block->bbJumpKind == BBJ_SWITCH) || (block->bbJumpKind == BBJ_RETURN))
+    {
+        insertionPoint = blockRange.LastNode();
+        assert(insertionPoint != nullptr);
+
+#if DEBUG
+        switch (block->bbJumpKind)
+        {
+            case BBJ_COND:
+                assert(insertionPoint->OperIsConditionalJump());
+                break;
+
+            case BBJ_SWITCH:
+                assert((insertionPoint->OperGet() == GT_SWITCH) || (insertionPoint->OperGet() == GT_SWITCH_TABLE));
+                break;
+
+            case BBJ_RETURN:
+                assert((insertionPoint->OperGet() == GT_RETURN) || (insertionPoint->OperGet() == GT_JMP) ||
+                       (insertionPoint->OperGet() == GT_CALL));
+                break;
+
+            default:
+                unreached();
+        }
+#endif
+    }
+
+    blockRange.InsertBefore(insertionPoint, std::move(range));
 }

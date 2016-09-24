@@ -89,13 +89,30 @@ namespace System.Runtime.CompilerServices {
            _RunModuleConstructor(module.GetRuntimeModule());
         }
 
-        [System.Security.SecurityCritical]  // auto-generated
-        [MethodImplAttribute(MethodImplOptions.InternalCall)]
-        private static unsafe extern void _PrepareMethod(IRuntimeMethodInfo method, IntPtr* pInstantiation, int cInstantiation);
 
         [System.Security.SecurityCritical]  // auto-generated
         [DllImport(JitHelpers.QCall, CharSet = CharSet.Unicode), SuppressUnmanagedCodeSecurity]
         internal static extern void _CompileMethod(IRuntimeMethodInfo method);
+
+
+        #if FEATURE_CORECLR
+        public static void PrepareMethod(RuntimeMethodHandle method){}
+        public static void PrepareMethod(RuntimeMethodHandle method, RuntimeTypeHandle[] instantiation){}
+        public static void PrepareContractedDelegate(Delegate d){}
+        
+        public static void PrepareDelegate(Delegate d)
+        {
+            if (d == null)
+            {
+                throw new ArgumentNullException ("d");
+            }
+        }
+
+        #else
+        
+        [System.Security.SecurityCritical]  // auto-generated
+        [MethodImplAttribute(MethodImplOptions.InternalCall)]
+        private static unsafe extern void _PrepareMethod(IRuntimeMethodInfo method, IntPtr* pInstantiation, int cInstantiation);
 
         // Simple (instantiation not required) method.
         [System.Security.SecurityCritical]  // auto-generated_required
@@ -122,7 +139,6 @@ namespace System.Runtime.CompilerServices {
                 }
             }
         }
- 
         // This method triggers a given delegate to be prepared.  This involves preparing the
         // delegate's Invoke method and preparing the target of that Invoke.  In the case of
         // a multi-cast delegate, we rely on the fact that each individual component was prepared
@@ -149,7 +165,7 @@ namespace System.Runtime.CompilerServices {
         [System.Security.SecurityCritical]  // auto-generated_required
         [MethodImplAttribute(MethodImplOptions.InternalCall)]
         public static extern void PrepareContractedDelegate(Delegate d);
-
+        #endif
         [System.Security.SecuritySafeCritical]  // auto-generated
         [MethodImplAttribute(MethodImplOptions.InternalCall)]
         public static extern int GetHashCode(Object o);
@@ -188,7 +204,6 @@ namespace System.Runtime.CompilerServices {
         [ReliabilityContract(Consistency.WillNotCorruptState, Cer.Success)]
         public static extern void EnsureSufficientExecutionStack();
 
-#if FEATURE_CORECLR
         // This method ensures that there is sufficient stack to execute the average Framework function.
         // If there is not enough stack, then it return false.
         // Note: this method is not part of the CER support, and is not to be confused with ProbeForSufficientStack
@@ -196,13 +211,18 @@ namespace System.Runtime.CompilerServices {
         [System.Security.SecuritySafeCritical]
         [MethodImplAttribute(MethodImplOptions.InternalCall)]
         [ReliabilityContract(Consistency.WillNotCorruptState, Cer.Success)]
-        internal static extern bool TryEnsureSufficientExecutionStack();
-#endif
+        public static extern bool TryEnsureSufficientExecutionStack();
 
+        #if FEATURE_CORECLR
+        public static void ProbeForSufficientStack()
+        {
+        }
+        #else
         [System.Security.SecurityCritical]  // auto-generated_required
         [MethodImplAttribute(MethodImplOptions.InternalCall)]
         [ReliabilityContract(Consistency.WillNotCorruptState, Cer.MayFail)]
         public static extern void ProbeForSufficientStack();
+        #endif
 
         // This method is a marker placed immediately before a try clause to mark the corresponding catch and finally blocks as
         // constrained. There's no code here other than the probe because most of the work is done at JIT time when we spot a call to this routine.

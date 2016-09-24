@@ -33,8 +33,18 @@ void Lowering::LowerRotate(GenTreePtr tree)
 {
 }
 
-// there is not much lowering to do with storing a local but
-// we do some handling of contained immediates and widening operations of unsigneds
+//------------------------------------------------------------------------
+// LowerStoreLoc: Lower a store of a lclVar
+//
+// Arguments:
+//    storeLoc - the local store (GT_STORE_LCL_FLD or GT_STORE_LCL_VAR)
+//
+// Notes:
+//    This involves:
+//    - Setting the appropriate candidates for a store of a multi-reg call return value.
+//    - Requesting an internal register for SIMD12 stores.
+//    - Handling of contained immediates and widening operations of unsigneds.
+
 void Lowering::LowerStoreLoc(GenTreeLclVarCommon* storeLoc)
 {
     TreeNodeInfo* info = &(storeLoc->gtLsraInfo);
@@ -59,14 +69,22 @@ void Lowering::LowerStoreLoc(GenTreeLclVarCommon* storeLoc)
     }
 
 #ifdef FEATURE_SIMD
-    if (storeLoc->TypeGet() == TYP_SIMD12)
+    if (varTypeIsSIMD(storeLoc))
     {
-        // Need an additional register to extract upper 4 bytes of Vector3.
-        info->internalFloatCount = 1;
-        info->setInternalCandidates(m_lsra, m_lsra->allSIMDRegs());
+        if (op1->IsCnsIntOrI())
+        {
+            // InitBlk
+            MakeSrcContained(storeLoc, op1);
+        }
+        else if ((storeLoc->TypeGet() == TYP_SIMD12) && (storeLoc->OperGet() == GT_STORE_LCL_FLD))
+        {
+            // Need an additional register to extract upper 4 bytes of Vector3.
+            info->internalFloatCount = 1;
+            info->setInternalCandidates(m_lsra, m_lsra->allSIMDRegs());
 
-        // In this case don't mark the operand as contained as we want it to
-        // be evaluated into an xmm register
+            // In this case don't mark the operand as contained as we want it to
+            // be evaluated into an xmm register
+        }
         return;
     }
 #endif // FEATURE_SIMD
@@ -166,9 +184,9 @@ void Lowering::TreeNodeInfoInit(GenTree* tree)
             if (tree->TypeGet() == TYP_SIMD12)
             {
                 // We need an internal register different from targetReg in which 'tree' produces its result
-                // because both targetReg and internal reg will be in use at the same time. This is achieved
-                // by asking for two internal registers.
-                info->internalFloatCount = 2;
+                // because both targetReg and internal reg will be in use at the same time.
+                info->internalFloatCount     = 1;
+                info->isInternalRegDelayFree = true;
                 info->setInternalCandidates(m_lsra, m_lsra->allSIMDRegs());
             }
 #endif
@@ -176,7 +194,16 @@ void Lowering::TreeNodeInfoInit(GenTree* tree)
 
         case GT_STORE_LCL_FLD:
         case GT_STORE_LCL_VAR:
-            info->srcCount = 1;
+#ifdef _TARGET_X86_
+            if (tree->gtGetOp1()->OperGet() == GT_LONG)
+            {
+                info->srcCount = 2;
+            }
+            else
+#endif // _TARGET_X86_
+            {
+                info->srcCount = 1;
+            }
             info->dstCount = 0;
             LowerStoreLoc(tree->AsLclVarCommon());
             break;
@@ -223,6 +250,7 @@ void Lowering::TreeNodeInfoInit(GenTree* tree)
             break;
 
         case GT_LIST:
+        case GT_FIELD_LIST:
         case GT_ARGPLACE:
         case GT_NO_OP:
         case GT_START_NONGC:
@@ -239,9 +267,9 @@ void Lowering::TreeNodeInfoInit(GenTree* tree)
 #if !defined(_TARGET_64BIT_)
 
         case GT_LONG:
-            if (tree->gtNext == nullptr)
+            if ((tree->gtLIRFlags & LIR::Flags::IsUnusedValue) != 0)
             {
-                // An uncontained GT_LONG node needs to consume its source operands
+                // An unused GT_LONG node needs to consume its sources.
                 info->srcCount = 2;
             }
             else
@@ -249,6 +277,7 @@ void Lowering::TreeNodeInfoInit(GenTree* tree)
                 // Passthrough
                 info->srcCount = 0;
             }
+
             info->dstCount = 0;
             break;
 
@@ -302,6 +331,11 @@ void Lowering::TreeNodeInfoInit(GenTree* tree)
             info->srcCount = 0;
             info->dstCount = 0;
             l->clearDstCount(tree->gtOp.gtOp1);
+            break;
+
+        case GT_JCC:
+            info->srcCount = 0;
+            info->dstCount = 0;
             break;
 
         case GT_JMP:
@@ -416,6 +450,9 @@ void Lowering::TreeNodeInfoInit(GenTree* tree)
 
         case GT_MUL:
         case GT_MULHI:
+#if defined(_TARGET_X86_) && !defined(LEGACY_BACKEND)
+        case GT_MUL_LONG:
+#endif
             SetMulOpCounts(tree);
             break;
 
@@ -470,6 +507,10 @@ void Lowering::TreeNodeInfoInit(GenTree* tree)
         case GT_RSZ:
         case GT_ROL:
         case GT_ROR:
+#ifdef _TARGET_X86_
+        case GT_LSH_HI:
+        case GT_RSH_LO:
+#endif
             TreeNodeInfoInitShiftRotate(tree);
             break;
 
@@ -479,7 +520,7 @@ void Lowering::TreeNodeInfoInit(GenTree* tree)
         case GT_LE:
         case GT_GE:
         case GT_GT:
-            LowerCmp(tree);
+            TreeNodeInfoInitCmp(tree);
             break;
 
         case GT_CKFINITE:
@@ -522,22 +563,28 @@ void Lowering::TreeNodeInfoInit(GenTree* tree)
         }
         break;
 
-#ifdef _TARGET_X86_
+#if !defined(FEATURE_PUT_STRUCT_ARG_STK)
         case GT_OBJ:
-            NYI_X86("GT_OBJ");
-#endif //_TARGET_X86_
-
-        case GT_INITBLK:
-        case GT_COPYBLK:
-        case GT_COPYOBJ:
-            TreeNodeInfoInitBlockStore(tree->AsBlkOp());
+#endif
+        case GT_BLK:
+        case GT_DYN_BLK:
+            // These should all be eliminated prior to Lowering.
+            assert(!"Non-store block node in Lowering");
+            info->srcCount = 0;
+            info->dstCount = 0;
             break;
 
-#ifdef FEATURE_UNIX_AMD64_STRUCT_PASSING
+#ifdef FEATURE_PUT_STRUCT_ARG_STK
         case GT_PUTARG_STK:
             TreeNodeInfoInitPutArgStk(tree);
             break;
-#endif // FEATURE_UNIX_AMD64_STRUCT_PASSING
+#endif // FEATURE_PUT_STRUCT_ARG_STK
+
+        case GT_STORE_BLK:
+        case GT_STORE_OBJ:
+        case GT_STORE_DYN_BLK:
+            TreeNodeInfoInitBlockStore(tree->AsBlk());
+            break;
 
         case GT_LCLHEAP:
             TreeNodeInfoInitLclHeap(tree);
@@ -605,13 +652,19 @@ void Lowering::TreeNodeInfoInit(GenTree* tree)
         case GT_ARR_OFFSET:
             // This consumes the offset, if any, the arrObj and the effective index,
             // and produces the flattened offset for this dimension.
-            info->srcCount         = 3;
-            info->dstCount         = 1;
-            info->internalIntCount = 1;
+            info->srcCount = 3;
+            info->dstCount = 1;
+
             // we don't want to generate code for this
             if (tree->gtArrOffs.gtOffset->IsIntegralConst(0))
             {
                 MakeSrcContained(tree, tree->gtArrOffs.gtOffset);
+            }
+            else
+            {
+                // Here we simply need an internal register, which must be different
+                // from any of the operand's registers, but may be the same as targetReg.
+                info->internalIntCount = 1;
             }
             break;
 
@@ -696,15 +749,9 @@ void Lowering::TreeNodeInfoInit(GenTree* tree)
 #endif
 
         case GT_CLS_VAR:
-            info->srcCount = 0;
-            // GT_CLS_VAR, by the time we reach the backend, must always
-            // be a pure use.
-            // It will produce a result of the type of the
-            // node, and use an internal register for the address.
-
-            info->dstCount = 1;
-            assert((tree->gtFlags & (GTF_VAR_DEF | GTF_VAR_USEASG | GTF_VAR_USEDEF)) == 0);
-            info->internalIntCount = 1;
+            // These nodes are eliminated by rationalizer.
+            JITDUMP("Unexpected node %s in Lower.\n", GenTree::NodeName(tree->OperGet()));
+            unreached();
             break;
     } // end switch (tree->OperGet())
 
@@ -999,6 +1046,31 @@ void Lowering::TreeNodeInfoInitShiftRotate(GenTree* tree)
     GenTreePtr shiftBy = tree->gtOp.gtOp2;
     GenTreePtr source  = tree->gtOp.gtOp1;
 
+#ifdef _TARGET_X86_
+    // The first operand of a GT_LSH_HI and GT_RSH_LO oper is a GT_LONG so that
+    // we can have a three operand form. Increment the srcCount.
+    if (tree->OperGet() == GT_LSH_HI || tree->OperGet() == GT_RSH_LO)
+    {
+        assert(source->OperGet() == GT_LONG);
+
+        info->srcCount++;
+
+        if (tree->OperGet() == GT_LSH_HI)
+        {
+            GenTreePtr sourceLo              = source->gtOp.gtOp1;
+            sourceLo->gtLsraInfo.isDelayFree = true;
+        }
+        else
+        {
+            GenTreePtr sourceHi              = source->gtOp.gtOp2;
+            sourceHi->gtLsraInfo.isDelayFree = true;
+        }
+
+        source->gtLsraInfo.hasDelayFreeSrc = true;
+        info->hasDelayFreeSrc              = true;
+    }
+#endif
+
     // x64 can encode 8 bits of shift and it will use 5 or 6. (the others are masked off)
     // We will allow whatever can be encoded - hope you know what you are doing.
     if (!IsContainableImmed(tree, shiftBy) || (shiftBy->gtIntConCommon.IconValue() > 255) ||
@@ -1059,6 +1131,12 @@ void Lowering::TreeNodeInfoInitCall(GenTreeCall* call)
         assert(ctrlExpr == nullptr);
         assert(call->gtCallAddr != nullptr);
         ctrlExpr = call->gtCallAddr;
+
+#ifdef _TARGET_X86_
+        // Fast tail calls aren't currently supported on x86, but if they ever are, the code
+        // below that handles indirect VSD calls will need to be fixed.
+        assert(!call->IsFastTailCall() || !call->IsVirtualStub());
+#endif // _TARGET_X86_
     }
 
     // set reg requirements on call target represented as control sequence.
@@ -1074,7 +1152,24 @@ void Lowering::TreeNodeInfoInitCall(GenTreeCall* call)
         // computed into a register.
         if (!call->IsFastTailCall())
         {
-            if (ctrlExpr->isIndir())
+#ifdef _TARGET_X86_
+            // On x86, we need to generate a very specific pattern for indirect VSD calls:
+            //
+            //    3-byte nop
+            //    call dword ptr [eax]
+            //
+            // Where EAX is also used as an argument to the stub dispatch helper. Make
+            // sure that the call target address is computed into EAX in this case.
+            if (call->IsVirtualStub() && (call->gtCallType == CT_INDIRECT))
+            {
+                assert(ctrlExpr->isIndir());
+
+                ctrlExpr->gtGetOp1()->gtLsraInfo.setSrcCandidates(l, RBM_VIRTUAL_STUB_TARGET);
+                MakeSrcContained(call, ctrlExpr);
+            }
+            else
+#endif // _TARGET_X86_
+                if (ctrlExpr->isIndir())
             {
                 MakeSrcContained(call, ctrlExpr);
             }
@@ -1162,7 +1257,7 @@ void Lowering::TreeNodeInfoInitCall(GenTreeCall* call)
     // First, count reg args
     for (GenTreePtr list = call->gtCallLateArgs; list; list = list->MoveNext())
     {
-        assert(list->IsList());
+        assert(list->OperIsList());
 
         GenTreePtr argNode = list->Current();
 
@@ -1177,7 +1272,7 @@ void Lowering::TreeNodeInfoInitCall(GenTreeCall* call)
             argNode->gtLsraInfo.srcCount = 1;
             argNode->gtLsraInfo.dstCount = 0;
 
-#ifdef FEATURE_UNIX_AMD64_STRUCT_PASSING
+#ifdef FEATURE_PUT_STRUCT_ARG_STK
             // If the node is TYP_STRUCT and it is put on stack with
             // putarg_stk operation, we consume and produce no registers.
             // In this case the embedded Obj node should not produce
@@ -1189,7 +1284,7 @@ void Lowering::TreeNodeInfoInitCall(GenTreeCall* call)
                 argNode->gtOp.gtOp1->gtLsraInfo.dstCount = 0;
                 argNode->gtLsraInfo.srcCount             = 0;
             }
-#endif // FEATURE_UNIX_AMD64_STRUCT_PASSING
+#endif // FEATURE_PUT_STRUCT_ARG_STK
             continue;
         }
 
@@ -1219,7 +1314,7 @@ void Lowering::TreeNodeInfoInitCall(GenTreeCall* call)
 
         // If the struct arg is wrapped in CPYBLK the type of the param will be TYP_VOID.
         // Use the curArgTabEntry's isStruct to get whether the param is a struct.
-        if (varTypeIsStruct(argNode) FEATURE_UNIX_AMD64_STRUCT_PASSING_ONLY(|| curArgTabEntry->isStruct))
+        if (varTypeIsStruct(argNode) PUT_STRUCT_ARG_STK_ONLY(|| curArgTabEntry->isStruct))
         {
             unsigned   originalSize = 0;
             LclVarDsc* varDsc       = nullptr;
@@ -1241,16 +1336,16 @@ void Lowering::TreeNodeInfoInitCall(GenTreeCall* call)
             {
                 originalSize = genTypeSize(argNode->gtType);
             }
-            else if (argNode->gtOper == GT_LIST)
+            else if (argNode->gtOper == GT_FIELD_LIST)
             {
                 originalSize = 0;
 
                 // There could be up to 2 PUTARG_REGs in the list
-                GenTreeArgList* argListPtr   = argNode->AsArgList();
-                unsigned        iterationNum = 0;
-                for (; argListPtr; argListPtr = argListPtr->Rest())
+                GenTreeFieldList* fieldListPtr = argNode->AsFieldList();
+                unsigned          iterationNum = 0;
+                for (; fieldListPtr; fieldListPtr = fieldListPtr->Rest())
                 {
-                    GenTreePtr putArgRegNode = argListPtr->gtOp.gtOp1;
+                    GenTreePtr putArgRegNode = fieldListPtr->Current();
                     assert(putArgRegNode->gtOper == GT_PUTARG_REG);
 
                     if (iterationNum == 0)
@@ -1441,24 +1536,56 @@ void Lowering::TreeNodeInfoInitCall(GenTreeCall* call)
 // Return Value:
 //    None.
 //
-void Lowering::TreeNodeInfoInitBlockStore(GenTreeBlkOp* blkNode)
+void Lowering::TreeNodeInfoInitBlockStore(GenTreeBlk* blkNode)
 {
-    GenTree*    dstAddr = blkNode->Dest();
-    unsigned    size;
+    GenTree*    dstAddr  = blkNode->Addr();
+    unsigned    size     = blkNode->gtBlkSize;
+    GenTree*    source   = blkNode->Data();
     LinearScan* l        = m_lsra;
     Compiler*   compiler = comp;
 
-    // Sources are dest address, initVal or source, and size
-    blkNode->gtLsraInfo.srcCount = 3;
+    // Sources are dest address, initVal or source.
+    // We may require an additional source or temp register for the size.
+    blkNode->gtLsraInfo.srcCount = 2;
     blkNode->gtLsraInfo.dstCount = 0;
+    blkNode->gtLsraInfo.setInternalCandidates(l, RBM_NONE);
+    GenTreePtr srcAddrOrFill = nullptr;
+    bool       isInitBlk     = blkNode->OperIsInitBlkOp();
 
-    if (blkNode->OperGet() == GT_INITBLK)
+    regMaskTP dstAddrRegMask = RBM_NONE;
+    regMaskTP sourceRegMask  = RBM_NONE;
+    regMaskTP blkSizeRegMask = RBM_NONE;
+    if (!isInitBlk)
     {
-        GenTreeInitBlk* initBlkNode = blkNode->AsInitBlk();
+        // CopyObj or CopyBlk
+        if ((blkNode->OperGet() == GT_STORE_OBJ) && ((blkNode->AsObj()->gtGcPtrCount == 0) || blkNode->gtBlkOpGcUnsafe))
+        {
+            blkNode->SetOper(GT_STORE_BLK);
+        }
+        if (source->gtOper == GT_IND)
+        {
+            srcAddrOrFill = blkNode->Data()->gtGetOp1();
+            // We're effectively setting source as contained, but can't call MakeSrcContained, because the
+            // "inheritance" of the srcCount is to a child not a parent - it would "just work" but could be misleading.
+            // If srcAddr is already non-contained, we don't need to change it.
+            if (srcAddrOrFill->gtLsraInfo.getDstCount() == 0)
+            {
+                srcAddrOrFill->gtLsraInfo.setDstCount(1);
+                srcAddrOrFill->gtLsraInfo.setSrcCount(source->gtLsraInfo.srcCount);
+            }
+            m_lsra->clearOperandCounts(source);
+        }
+        else if (!source->OperIsSIMD())
+        {
+            assert(source->IsLocal());
+            MakeSrcContained(blkNode, source);
+        }
+    }
 
-        GenTreePtr blockSize = initBlkNode->Size();
-        GenTreePtr initVal   = initBlkNode->InitVal();
-
+    if (isInitBlk)
+    {
+        GenTree* initVal = source;
+        srcAddrOrFill    = source;
         // If we have an InitBlk with constant block size we can optimize several ways:
         // a) If the size is smaller than a small memory page but larger than INITBLK_UNROLL_LIMIT bytes
         //    we use rep stosb since this reduces the register pressure in LSRA and we have
@@ -1471,13 +1598,11 @@ void Lowering::TreeNodeInfoInitBlockStore(GenTreeBlkOp* blkNode)
 
         // This threshold will decide from using the helper or let the JIT decide to inline
         // a code sequence of its choice.
-        ssize_t helperThreshold = max(INITBLK_STOS_LIMIT, INITBLK_UNROLL_LIMIT);
+        unsigned helperThreshold = max(INITBLK_STOS_LIMIT, INITBLK_UNROLL_LIMIT);
 
         // TODO-X86-CQ: Investigate whether a helper call would be beneficial on x86
-        if (blockSize->IsCnsIntOrI() && blockSize->gtIntCon.gtIconVal <= helperThreshold)
+        if (size != 0 && size <= helperThreshold)
         {
-            ssize_t size = blockSize->gtIntCon.gtIconVal;
-
             // Always favor unrolling vs rep stos.
             if (size <= INITBLK_UNROLL_LIMIT && initVal->IsCnsIntOrI())
             {
@@ -1503,8 +1628,6 @@ void Lowering::TreeNodeInfoInitBlockStore(GenTreeBlkOp* blkNode)
                 initVal->gtIntCon.gtIconVal = 0x01010101 * fill;
 #endif // !_TARGET_AMD64_
 
-                MakeSrcContained(blkNode, blockSize);
-
                 // In case we have a buffer >= 16 bytes
                 // we can use SSE2 to do a 128-bit store in a single
                 // instruction.
@@ -1515,42 +1638,53 @@ void Lowering::TreeNodeInfoInitBlockStore(GenTreeBlkOp* blkNode)
                     blkNode->gtLsraInfo.internalFloatCount = 1;
                     blkNode->gtLsraInfo.setInternalCandidates(l, l->internalFloatRegCandidates());
                 }
-                initBlkNode->gtBlkOpKind = GenTreeBlkOp::BlkOpKindUnroll;
+                blkNode->gtBlkOpKind = GenTreeBlk::BlkOpKindUnroll;
+
+#ifdef _TARGET_X86_
+                if ((size & 1) != 0)
+                {
+                    // On x86, you can't address the lower byte of ESI, EDI, ESP, or EBP when doing
+                    // a "mov byte ptr [dest], val". If the fill size is odd, we will try to do this
+                    // when unrolling, so only allow byteable registers as the source value. (We could
+                    // consider just using BlkOpKindRepInstr instead.)
+                    sourceRegMask = RBM_BYTE_REGS;
+                }
+#endif // _TARGET_X86_
             }
             else
             {
                 // rep stos has the following register requirements:
                 // a) The memory address to be in RDI.
                 // b) The fill value has to be in RAX.
-                // c) The buffer size must be in RCX.
-                dstAddr->gtLsraInfo.setSrcCandidates(l, RBM_RDI);
-                initVal->gtLsraInfo.setSrcCandidates(l, RBM_RAX);
-                blockSize->gtLsraInfo.setSrcCandidates(l, RBM_RCX);
-                initBlkNode->gtBlkOpKind = GenTreeBlkOp::BlkOpKindRepInstr;
+                // c) The buffer size will go in RCX.
+                dstAddrRegMask       = RBM_RDI;
+                srcAddrOrFill        = initVal;
+                sourceRegMask        = RBM_RAX;
+                blkSizeRegMask       = RBM_RCX;
+                blkNode->gtBlkOpKind = GenTreeBlk::BlkOpKindRepInstr;
             }
         }
         else
         {
 #ifdef _TARGET_AMD64_
             // The helper follows the regular AMD64 ABI.
-            dstAddr->gtLsraInfo.setSrcCandidates(l, RBM_ARG_0);
-            initVal->gtLsraInfo.setSrcCandidates(l, RBM_ARG_1);
-            blockSize->gtLsraInfo.setSrcCandidates(l, RBM_ARG_2);
-            initBlkNode->gtBlkOpKind = GenTreeBlkOp::BlkOpKindHelper;
+            dstAddrRegMask       = RBM_ARG_0;
+            sourceRegMask        = RBM_ARG_1;
+            blkSizeRegMask       = RBM_ARG_2;
+            blkNode->gtBlkOpKind = GenTreeBlk::BlkOpKindHelper;
 #else  // !_TARGET_AMD64_
-            dstAddr->gtLsraInfo.setSrcCandidates(l, RBM_RDI);
-            initVal->gtLsraInfo.setSrcCandidates(l, RBM_RAX);
-            blockSize->gtLsraInfo.setSrcCandidates(l, RBM_RCX);
-            initBlkNode->gtBlkOpKind = GenTreeBlkOp::BlkOpKindRepInstr;
+            dstAddrRegMask                  = RBM_RDI;
+            sourceRegMask                   = RBM_RAX;
+            blkSizeRegMask                  = RBM_RCX;
+            blkNode->gtBlkOpKind            = GenTreeBlk::BlkOpKindRepInstr;
 #endif // !_TARGET_AMD64_
         }
     }
-    else if (blkNode->OperGet() == GT_COPYOBJ)
+    else if (blkNode->gtOper == GT_STORE_OBJ)
     {
-        GenTreeCpObj* cpObjNode = blkNode->AsCpObj();
+        // CopyObj
 
-        GenTreePtr clsTok  = cpObjNode->ClsTok();
-        GenTreePtr srcAddr = cpObjNode->Source();
+        GenTreeObj* cpObjNode = blkNode->AsObj();
 
         unsigned slots = cpObjNode->gtSlots;
 
@@ -1559,10 +1693,9 @@ void Lowering::TreeNodeInfoInitBlockStore(GenTreeBlkOp* blkNode)
         assert(cpObjNode->gtGcPtrCount > 0);
 
         assert(dstAddr->gtType == TYP_BYREF || dstAddr->gtType == TYP_I_IMPL);
-        assert(clsTok->IsIconHandle());
 
-        CORINFO_CLASS_HANDLE clsHnd    = (CORINFO_CLASS_HANDLE)clsTok->gtIntCon.gtIconVal;
-        size_t               classSize = compiler->info.compCompHnd->getClassSize(clsHnd);
+        CORINFO_CLASS_HANDLE clsHnd    = cpObjNode->gtClass;
+        size_t               classSize = comp->info.compCompHnd->getClassSize(clsHnd);
         size_t               blkSize   = roundUp(classSize, TARGET_POINTER_SIZE);
 
         // Currently, the EE always round up a class data structure so
@@ -1626,48 +1759,39 @@ void Lowering::TreeNodeInfoInitBlockStore(GenTreeBlkOp* blkNode)
         if (IsRepMovsProfitable)
         {
             // We need the size of the contiguous Non-GC-region to be in RCX to call rep movsq.
-            MakeSrcContained(blkNode, clsTok);
-            blkNode->gtLsraInfo.internalIntCount = 1;
-            blkNode->gtLsraInfo.setInternalCandidates(l, RBM_RCX);
+            blkSizeRegMask       = RBM_RCX;
+            blkNode->gtBlkOpKind = GenTreeBlk::BlkOpKindRepInstr;
         }
         else
         {
-            // We don't need to materialize the struct size because we will unroll
-            // the loop using movsq that automatically increments the pointers.
-            MakeSrcContained(blkNode, clsTok);
+            blkNode->gtBlkOpKind = GenTreeBlk::BlkOpKindUnroll;
         }
 
-        dstAddr->gtLsraInfo.setSrcCandidates(l, RBM_RDI);
-        srcAddr->gtLsraInfo.setSrcCandidates(l, RBM_RSI);
+        dstAddrRegMask = RBM_RDI;
+
+        // The srcAddr must be in a register.  If it was under a GT_IND, we need to subsume all of its
+        // sources.
+        sourceRegMask = RBM_RSI;
     }
     else
     {
-        assert(blkNode->OperGet() == GT_COPYBLK);
-        GenTreeCpBlk* cpBlkNode = blkNode->AsCpBlk();
-
-        GenTreePtr blockSize = cpBlkNode->Size();
-        GenTreePtr srcAddr   = cpBlkNode->Source();
-
+        assert((blkNode->OperGet() == GT_STORE_BLK) || (blkNode->OperGet() == GT_STORE_DYN_BLK));
+        // CopyBlk
         // In case of a CpBlk with a constant size and less than CPBLK_MOVS_LIMIT size
         // we can use rep movs to generate code instead of the helper call.
 
-        // This threshold will decide from using the helper or let the JIT decide to inline
+        // This threshold will decide between using the helper or let the JIT decide to inline
         // a code sequence of its choice.
-        ssize_t helperThreshold = max(CPBLK_MOVS_LIMIT, CPBLK_UNROLL_LIMIT);
+        unsigned helperThreshold = max(CPBLK_MOVS_LIMIT, CPBLK_UNROLL_LIMIT);
 
         // TODO-X86-CQ: Investigate whether a helper call would be beneficial on x86
-        if (blockSize->IsCnsIntOrI() && blockSize->gtIntCon.gtIconVal <= helperThreshold)
+        if ((size != 0) && (size <= helperThreshold))
         {
-            assert(!blockSize->IsIconHandle());
-            ssize_t size = blockSize->gtIntCon.gtIconVal;
-
             // If we have a buffer between XMM_REGSIZE_BYTES and CPBLK_UNROLL_LIMIT bytes, we'll use SSE2.
             // Structs and buffer with sizes <= CPBLK_UNROLL_LIMIT bytes are occurring in more than 95% of
             // our framework assemblies, so this is the main code generation scheme we'll use.
             if (size <= CPBLK_UNROLL_LIMIT)
             {
-                MakeSrcContained(blkNode, blockSize);
-
                 // If we have a remainder smaller than XMM_REGSIZE_BYTES, we need an integer temp reg.
                 //
                 // x86 specific note: if the size is odd, the last copy operation would be of size 1 byte.
@@ -1698,9 +1822,9 @@ void Lowering::TreeNodeInfoInitBlockStore(GenTreeBlkOp* blkNode)
 
                 // If src or dst are on stack, we don't have to generate the address into a register
                 // because it's just some constant+SP
-                if (srcAddr->OperIsLocalAddr())
+                if (srcAddrOrFill != nullptr && srcAddrOrFill->OperIsLocalAddr())
                 {
-                    MakeSrcContained(blkNode, srcAddr);
+                    MakeSrcContained(blkNode, srcAddrOrFill);
                 }
 
                 if (dstAddr->OperIsLocalAddr())
@@ -1708,14 +1832,15 @@ void Lowering::TreeNodeInfoInitBlockStore(GenTreeBlkOp* blkNode)
                     MakeSrcContained(blkNode, dstAddr);
                 }
 
-                cpBlkNode->gtBlkOpKind = GenTreeBlkOp::BlkOpKindUnroll;
+                blkNode->gtBlkOpKind = GenTreeBlk::BlkOpKindUnroll;
             }
             else
             {
-                dstAddr->gtLsraInfo.setSrcCandidates(l, RBM_RDI);
-                srcAddr->gtLsraInfo.setSrcCandidates(l, RBM_RSI);
-                blockSize->gtLsraInfo.setSrcCandidates(l, RBM_RCX);
-                cpBlkNode->gtBlkOpKind = GenTreeBlkOp::BlkOpKindRepInstr;
+                blkNode->gtLsraInfo.setInternalCandidates(l, RBM_NONE);
+                dstAddrRegMask       = RBM_RDI;
+                sourceRegMask        = RBM_RSI;
+                blkSizeRegMask       = RBM_RCX;
+                blkNode->gtBlkOpKind = GenTreeBlk::BlkOpKindRepInstr;
             }
         }
 #ifdef _TARGET_AMD64_
@@ -1724,29 +1849,60 @@ void Lowering::TreeNodeInfoInitBlockStore(GenTreeBlkOp* blkNode)
             // In case we have a constant integer this means we went beyond
             // CPBLK_MOVS_LIMIT bytes of size, still we should never have the case of
             // any GC-Pointers in the src struct.
-            if (blockSize->IsCnsIntOrI())
-            {
-                assert(!blockSize->IsIconHandle());
-            }
-
-            dstAddr->gtLsraInfo.setSrcCandidates(l, RBM_ARG_0);
-            srcAddr->gtLsraInfo.setSrcCandidates(l, RBM_ARG_1);
-            blockSize->gtLsraInfo.setSrcCandidates(l, RBM_ARG_2);
-            cpBlkNode->gtBlkOpKind = GenTreeBlkOp::BlkOpKindHelper;
+            blkNode->gtLsraInfo.setInternalCandidates(l, RBM_NONE);
+            dstAddrRegMask       = RBM_ARG_0;
+            sourceRegMask        = RBM_ARG_1;
+            blkSizeRegMask       = RBM_ARG_2;
+            blkNode->gtBlkOpKind = GenTreeBlk::BlkOpKindHelper;
         }
 #elif defined(_TARGET_X86_)
         else
         {
-            dstAddr->gtLsraInfo.setSrcCandidates(l, RBM_RDI);
-            srcAddr->gtLsraInfo.setSrcCandidates(l, RBM_RSI);
-            blockSize->gtLsraInfo.setSrcCandidates(l, RBM_RCX);
-            cpBlkNode->gtBlkOpKind = GenTreeBlkOp::BlkOpKindRepInstr;
+            dstAddrRegMask       = RBM_RDI;
+            sourceRegMask        = RBM_RSI;
+            blkSizeRegMask       = RBM_RCX;
+            blkNode->gtBlkOpKind = GenTreeBlk::BlkOpKindRepInstr;
         }
 #endif // _TARGET_X86_
+        assert(blkNode->gtBlkOpKind != GenTreeBlk::BlkOpKindInvalid);
+    }
+    if (dstAddrRegMask != RBM_NONE)
+    {
+        dstAddr->gtLsraInfo.setSrcCandidates(l, dstAddrRegMask);
+    }
+    if (sourceRegMask != RBM_NONE)
+    {
+        if (srcAddrOrFill != nullptr)
+        {
+            srcAddrOrFill->gtLsraInfo.setSrcCandidates(l, sourceRegMask);
+        }
+        else
+        {
+            // This is a local source; we'll use a temp register for its address.
+            blkNode->gtLsraInfo.addInternalCandidates(l, sourceRegMask);
+            blkNode->gtLsraInfo.internalIntCount++;
+        }
+    }
+    if (blkSizeRegMask != RBM_NONE)
+    {
+        if (size != 0)
+        {
+            // Reserve a temp register for the block size argument.
+            blkNode->gtLsraInfo.addInternalCandidates(l, blkSizeRegMask);
+            blkNode->gtLsraInfo.internalIntCount++;
+        }
+        else
+        {
+            // The block size argument is a third argument to GT_STORE_DYN_BLK
+            noway_assert(blkNode->gtOper == GT_STORE_DYN_BLK);
+            blkNode->gtLsraInfo.setSrcCount(3);
+            GenTree* blockSize = blkNode->AsDynBlk()->gtDynamicSize;
+            blockSize->gtLsraInfo.setSrcCandidates(l, blkSizeRegMask);
+        }
     }
 }
 
-#ifdef FEATURE_UNIX_AMD64_STRUCT_PASSING
+#ifdef FEATURE_PUT_STRUCT_ARG_STK
 //------------------------------------------------------------------------
 // TreeNodeInfoInitPutArgStk: Set the NodeInfo for a GT_PUTARG_STK.
 //
@@ -1760,6 +1916,25 @@ void Lowering::TreeNodeInfoInitPutArgStk(GenTree* tree)
 {
     TreeNodeInfo* info = &(tree->gtLsraInfo);
     LinearScan*   l    = m_lsra;
+
+#ifdef _TARGET_X86_
+    if (tree->gtOp.gtOp1->gtOper == GT_FIELD_LIST)
+    {
+        GenTreeFieldList* fieldListPtr = tree->gtOp.gtOp1->AsFieldList();
+        for (; fieldListPtr; fieldListPtr = fieldListPtr->Rest())
+        {
+            GenTree* fieldNode = fieldListPtr->Current();
+            assert(fieldNode->TypeGet() != TYP_LONG);
+            if (varTypeIsByte(fieldNode))
+            {
+                fieldNode->gtLsraInfo.setSrcCandidates(l, l->allRegs(TYP_INT) & ~RBM_NON_BYTE_REGS);
+            }
+            info->srcCount++;
+        }
+        info->dstCount = 0;
+        return;
+    }
+#endif // _TARGET_X86_
 
     if (tree->TypeGet() != TYP_STRUCT)
     {
@@ -1834,10 +2009,14 @@ void Lowering::TreeNodeInfoInitPutArgStk(GenTree* tree)
             info->setInternalCandidates(l, regMask);
         }
 
+#ifdef _TARGET_X86_
+        if (size >= 8)
+#else  // !_TARGET_X86_
         if (size >= XMM_REGSIZE_BYTES)
+#endif // !_TARGET_X86_
         {
-            // If we have a buffer larger than XMM_REGSIZE_BYTES,
-            // reserve an XMM register to use it for a
+            // If we have a buffer larger than or equal to XMM_REGSIZE_BYTES on x64/ux,
+            // or larger than or equal to 8 bytes on x86, reserve an XMM register to use it for a
             // series of 16-byte loads and stores.
             info->internalFloatCount = 1;
             info->addInternalCandidates(l, l->internalFloatRegCandidates());
@@ -1873,7 +2052,7 @@ void Lowering::TreeNodeInfoInitPutArgStk(GenTree* tree)
         info->srcCount -= 1;
     }
 }
-#endif // FEATURE_UNIX_AMD64_STRUCT_PASSING
+#endif // FEATURE_PUT_STRUCT_ARG_STK
 
 //------------------------------------------------------------------------
 // TreeNodeInfoInitLclHeap: Set the NodeInfo for a GT_LCLHEAP.
@@ -1897,13 +2076,17 @@ void Lowering::TreeNodeInfoInitLclHeap(GenTree* tree)
     // Here '-' means don't care.
     //
     //     Size?                    Init Memory?         # temp regs
-    //      0                            -                  0
-    //      const and <=6 reg words      -                  0
-    //      const and >6 reg words       Yes                0
+    //      0                            -                  0 (returns 0)
+    //      const and <=6 reg words      -                  0 (pushes '0')
+    //      const and >6 reg words       Yes                0 (pushes '0')
     //      const and <PageSize          No                 0 (amd64) 1 (x86)
-    //      const and >=PageSize         No                 2
-    //      Non-const                    Yes                0
-    //      Non-const                    No                 2
+    //                                                        (x86:tmpReg for sutracting from esp)
+    //      const and >=PageSize         No                 2 (regCnt and tmpReg for subtracing from sp)
+    //      Non-const                    Yes                0 (regCnt=targetReg and pushes '0')
+    //      Non-const                    No                 2 (regCnt and tmpReg for subtracting from sp)
+    //
+    // Note: Here we don't need internal register to be different from targetReg.
+    // Rather, require it to be different from operand's reg.
 
     GenTreePtr size = tree->gtOp.gtOp1;
     if (size->IsCnsIntOrI())
@@ -2110,8 +2293,26 @@ void Lowering::TreeNodeInfoInitModDiv(GenTree* tree)
         info->setDstCandidates(l, RBM_RAX);
     }
 
-    // If possible would like to have op1 in RAX to avoid a register move
-    op1->gtLsraInfo.setSrcCandidates(l, RBM_RAX);
+#ifdef _TARGET_X86_
+    if (op1->OperGet() == GT_LONG)
+    {
+        // To avoid reg move would like to have op1's low part in RAX and high part in RDX.
+        GenTree* loVal = op1->gtGetOp1();
+        GenTree* hiVal = op1->gtGetOp2();
+
+        // Src count is actually 3, so increment.
+        assert(op2->IsCnsIntOrI());
+        info->srcCount++;
+
+        loVal->gtLsraInfo.setSrcCandidates(l, RBM_EAX);
+        hiVal->gtLsraInfo.setSrcCandidates(l, RBM_EDX);
+    }
+    else
+#endif
+    {
+        // If possible would like to have op1 in RAX to avoid a register move
+        op1->gtLsraInfo.setSrcCandidates(l, RBM_RAX);
+    }
 
     // divisor can be an r/m, but the memory indirection must be of the same size as the divide
     if (op2->isMemoryOp() && (op2->TypeGet() == tree->TypeGet()))
@@ -2219,12 +2420,13 @@ void Lowering::TreeNodeInfoInitSIMD(GenTree* tree)
     info->dstCount         = 1;
     switch (simdTree->gtSIMDIntrinsicID)
     {
+        GenTree* op1;
         GenTree* op2;
 
         case SIMDIntrinsicInit:
         {
             info->srcCount = 1;
-            GenTree* op1   = tree->gtOp.gtOp1;
+            op1            = tree->gtOp.gtOp1;
 
             // This sets all fields of a SIMD struct to the given value.
             // Mark op1 as contained if it is either zero or int constant of all 1's,
@@ -2256,7 +2458,7 @@ void Lowering::TreeNodeInfoInitSIMD(GenTree* tree)
         {
             info->srcCount = (short)(simdTree->gtSIMDSize / genTypeSize(simdTree->gtSIMDBaseType));
 
-            // Need an internal register to stitch together all the values into a single vector in a SIMD reg
+            // Need an internal register to stitch together all the values into a single vector in a SIMD reg.
             info->internalFloatCount = 1;
             info->setInternalCandidates(lsra, lsra->allSIMDRegs());
         }
@@ -2330,6 +2532,10 @@ void Lowering::TreeNodeInfoInitSIMD(GenTree* tree)
             // Need two SIMD registers as scratch.
             // See genSIMDIntrinsicRelOp() for details on code sequence generate and
             // the need for two scratch registers.
+            //
+            // Note these intrinsics produce a BOOL result, hence internal float
+            // registers reserved are guaranteed to be different from target
+            // integer register without explicitly specifying.
             info->srcCount           = 2;
             info->internalFloatCount = 2;
             info->setInternalCandidates(lsra, lsra->allSIMDRegs());
@@ -2341,24 +2547,25 @@ void Lowering::TreeNodeInfoInitSIMD(GenTree* tree)
             {
                 // For SSE, or AVX with 32-byte vectors, we also need an internal register as scratch.
                 // Further we need the targetReg and internal reg to be distinct registers.
-                // This is achieved by requesting two internal registers; thus one of them
-                // will be different from targetReg.
                 // Note that if this is a TYP_SIMD16 or smaller on AVX, then we don't need a tmpReg.
                 //
                 // See genSIMDIntrinsicDotProduct() for details on code sequence generated and
                 // the need for scratch registers.
-                info->internalFloatCount = 2;
+                info->internalFloatCount     = 1;
+                info->isInternalRegDelayFree = true;
                 info->setInternalCandidates(lsra, lsra->allSIMDRegs());
             }
             info->srcCount = 2;
             break;
 
         case SIMDIntrinsicGetItem:
+        {
             // This implements get_Item method. The sources are:
             //  - the source SIMD struct
             //  - index (which element to get)
             // The result is baseType of SIMD struct.
             info->srcCount = 2;
+            op1            = tree->gtOp.gtOp1;
             op2            = tree->gtOp.gtOp2;
 
             // If the index is a constant, mark it as contained.
@@ -2367,48 +2574,69 @@ void Lowering::TreeNodeInfoInitSIMD(GenTree* tree)
                 info->srcCount = 1;
             }
 
-            // If the index is not a constant, we will use the SIMD temp location to store the vector.
-            // Otherwise, if the baseType is floating point, the targetReg will be a xmm reg and we
-            // can use that in the process of extracting the element.
-            //
-            // If the index is a constant and base type is a small int we can use pextrw, but on AVX
-            // we will need a temp if are indexing into the upper half of the AVX register.
-            // In all other cases with constant index, we need a temp xmm register to extract the
-            // element if index is other than zero.
+            if (op1->isMemoryOp())
+            {
+                MakeSrcContained(tree, op1);
 
-            if (!op2->IsCnsIntOrI())
-            {
-                (void)comp->getSIMDInitTempVarNum();
+                // Although GT_IND of TYP_SIMD12 reserves an internal float
+                // register for reading 4 and 8 bytes from memory and
+                // assembling them into target XMM reg, it is not required
+                // in this case.
+                op1->gtLsraInfo.internalIntCount   = 0;
+                op1->gtLsraInfo.internalFloatCount = 0;
             }
-            else if (!varTypeIsFloating(simdTree->gtSIMDBaseType))
+            else
             {
-                bool needFloatTemp;
-                if (varTypeIsSmallInt(simdTree->gtSIMDBaseType) &&
-                    (comp->getSIMDInstructionSet() == InstructionSet_AVX))
+                // If the index is not a constant, we will use the SIMD temp location to store the vector.
+                // Otherwise, if the baseType is floating point, the targetReg will be a xmm reg and we
+                // can use that in the process of extracting the element.
+                //
+                // If the index is a constant and base type is a small int we can use pextrw, but on AVX
+                // we will need a temp if are indexing into the upper half of the AVX register.
+                // In all other cases with constant index, we need a temp xmm register to extract the
+                // element if index is other than zero.
+
+                if (!op2->IsCnsIntOrI())
                 {
-                    int byteShiftCnt = (int)op2->AsIntCon()->gtIconVal * genTypeSize(simdTree->gtSIMDBaseType);
-                    needFloatTemp    = (byteShiftCnt >= 16);
+                    (void)comp->getSIMDInitTempVarNum();
                 }
-                else
+                else if (!varTypeIsFloating(simdTree->gtSIMDBaseType))
                 {
-                    needFloatTemp = !op2->IsIntegralConst(0);
-                }
-                if (needFloatTemp)
-                {
-                    info->internalFloatCount = 1;
-                    info->setInternalCandidates(lsra, lsra->allSIMDRegs());
+                    bool needFloatTemp;
+                    if (varTypeIsSmallInt(simdTree->gtSIMDBaseType) &&
+                        (comp->getSIMDInstructionSet() == InstructionSet_AVX))
+                    {
+                        int byteShiftCnt = (int)op2->AsIntCon()->gtIconVal * genTypeSize(simdTree->gtSIMDBaseType);
+                        needFloatTemp    = (byteShiftCnt >= 16);
+                    }
+                    else
+                    {
+                        needFloatTemp = !op2->IsIntegralConst(0);
+                    }
+
+                    if (needFloatTemp)
+                    {
+                        info->internalFloatCount = 1;
+                        info->setInternalCandidates(lsra, lsra->allSIMDRegs());
+                    }
                 }
             }
-            break;
+        }
+        break;
 
         case SIMDIntrinsicSetX:
         case SIMDIntrinsicSetY:
         case SIMDIntrinsicSetZ:
         case SIMDIntrinsicSetW:
-            // We need an internal integer register
-            info->srcCount         = 2;
-            info->internalIntCount = 1;
-            info->setInternalCandidates(lsra, lsra->allRegs(TYP_INT));
+            info->srcCount = 2;
+
+            // We need an internal integer register for SSE2 codegen
+            if (comp->getSIMDInstructionSet() == InstructionSet_SSE2)
+            {
+                info->internalIntCount = 1;
+                info->setInternalCandidates(lsra, lsra->allRegs(TYP_INT));
+            }
+
             break;
 
         case SIMDIntrinsicCast:
@@ -2513,6 +2741,8 @@ void Lowering::TreeNodeInfoInitCast(GenTree* tree)
     {
         if (genTypeSize(castOpType) == 8)
         {
+            // Here we don't need internal register to be different from targetReg,
+            // rather require it to be different from operand's reg.
             info->internalIntCount = 1;
         }
     }
@@ -2600,6 +2830,12 @@ void Lowering::LowerGCWriteBarrier(GenTree* tree)
 void Lowering::SetIndirAddrOpCounts(GenTreePtr indirTree)
 {
     assert(indirTree->isIndir());
+    // If this is the rhs of a block copy (i.e. non-enregisterable struct),
+    // it has no register requirements.
+    if (indirTree->TypeGet() == TYP_STRUCT)
+    {
+        return;
+    }
 
     GenTreePtr    addr = indirTree->gtGetOp1();
     TreeNodeInfo* info = &(indirTree->gtLsraInfo);
@@ -2608,7 +2844,6 @@ void Lowering::SetIndirAddrOpCounts(GenTreePtr indirTree)
     GenTreePtr index = nullptr;
     unsigned   mul, cns;
     bool       rev;
-    bool       modifiedSources = false;
 
 #ifdef FEATURE_SIMD
     // If indirTree is of TYP_SIMD12, don't mark addr as contained
@@ -2626,11 +2861,10 @@ void Lowering::SetIndirAddrOpCounts(GenTreePtr indirTree)
         info->internalFloatCount = 1;
 
         // In case of GT_IND we need an internal register different from targetReg and
-        // both of the registers are used at the same time. This achieved by reserving
-        // two internal registers
+        // both of the registers are used at the same time.
         if (indirTree->OperGet() == GT_IND)
         {
-            (info->internalFloatCount)++;
+            info->isInternalRegDelayFree = true;
         }
 
         info->setInternalCandidates(m_lsra, m_lsra->allSIMDRegs());
@@ -2639,16 +2873,21 @@ void Lowering::SetIndirAddrOpCounts(GenTreePtr indirTree)
     }
 #endif // FEATURE_SIMD
 
-    // These nodes go into an addr mode:
-    // - GT_CLS_VAR_ADDR turns into a constant.
-    // - GT_LCL_VAR_ADDR is a stack addr mode.
-    if ((addr->OperGet() == GT_CLS_VAR_ADDR) || (addr->OperGet() == GT_LCL_VAR_ADDR))
+    if ((indirTree->gtFlags & GTF_IND_REQ_ADDR_IN_REG) != 0)
     {
+        // The address of an indirection that requires its address in a reg.
+        // Skip any further processing that might otherwise make it contained.
+    }
+    else if ((addr->OperGet() == GT_CLS_VAR_ADDR) || (addr->OperGet() == GT_LCL_VAR_ADDR))
+    {
+        // These nodes go into an addr mode:
+        // - GT_CLS_VAR_ADDR turns into a constant.
+        // - GT_LCL_VAR_ADDR is a stack addr mode.
+
         // make this contained, it turns into a constant that goes into an addr mode
         MakeSrcContained(indirTree, addr);
     }
-    else if (addr->IsCnsIntOrI() && addr->AsIntConCommon()->FitsInAddrBase(comp) &&
-             addr->gtLsraInfo.getDstCandidates(m_lsra) != RBM_VIRTUAL_STUB_PARAM)
+    else if (addr->IsCnsIntOrI() && addr->AsIntConCommon()->FitsInAddrBase(comp))
     {
         // Amd64:
         // We can mark any pc-relative 32-bit addr as containable, except for a direct VSD call address.
@@ -2670,17 +2909,10 @@ void Lowering::SetIndirAddrOpCounts(GenTreePtr indirTree)
     }
     else if (addr->OperGet() == GT_LEA)
     {
-        GenTreeAddrMode* lea = addr->AsAddrMode();
-        base                 = lea->Base();
-        index                = lea->Index();
-
-        m_lsra->clearOperandCounts(addr);
-        // The srcCount is decremented because addr is now "contained",
-        // then we account for the base and index below, if they are non-null.
-        info->srcCount--;
+        MakeSrcContained(indirTree, addr);
     }
     else if (comp->codeGen->genCreateAddrMode(addr, -1, true, 0, &rev, &base, &index, &mul, &cns, true /*nogen*/) &&
-             !(modifiedSources = AreSourcesPossiblyModified(indirTree, base, index)))
+             !AreSourcesPossiblyModified(indirTree, base, index))
     {
         // An addressing mode will be constructed that may cause some
         // nodes to not need a register, and cause others' lifetimes to be extended
@@ -2689,7 +2921,16 @@ void Lowering::SetIndirAddrOpCounts(GenTreePtr indirTree)
         assert(base != addr);
         m_lsra->clearOperandCounts(addr);
 
-        GenTreePtr arrLength = nullptr;
+        const bool hasBase  = base != nullptr;
+        const bool hasIndex = index != nullptr;
+        assert(hasBase || hasIndex); // At least one of a base or an index must be present.
+
+        // If the addressing mode has both a base and an index, bump its source count by one. If it only has one or the
+        // other, its source count is already correct (due to the source for the address itself).
+        if (hasBase && hasIndex)
+        {
+            info->srcCount++;
+        }
 
         // Traverse the computation below GT_IND to find the operands
         // for the addressing mode, marking the various constants and
@@ -2699,14 +2940,13 @@ void Lowering::SetIndirAddrOpCounts(GenTreePtr indirTree)
         // up of simple arithmetic operators, and the code generator
         // only traverses one leg of each node.
 
-        bool       foundBase  = (base == nullptr);
-        bool       foundIndex = (index == nullptr);
-        GenTreePtr nextChild  = nullptr;
-        for (GenTreePtr child = addr; child != nullptr && !child->OperIsLeaf(); child = nextChild)
+        bool foundBase  = !hasBase;
+        bool foundIndex = !hasIndex;
+        for (GenTree *child = addr, *nextChild = nullptr; child != nullptr && !child->OperIsLeaf(); child = nextChild)
         {
-            nextChild      = nullptr;
-            GenTreePtr op1 = child->gtOp.gtOp1;
-            GenTreePtr op2 = (child->OperIsBinary()) ? child->gtOp.gtOp2 : nullptr;
+            nextChild    = nullptr;
+            GenTree* op1 = child->gtOp.gtOp1;
+            GenTree* op2 = (child->OperIsBinary()) ? child->gtOp.gtOp2 : nullptr;
 
             if (op1 == base)
             {
@@ -2747,7 +2987,6 @@ void Lowering::SetIndirAddrOpCounts(GenTreePtr indirTree)
             }
         }
         assert(foundBase && foundIndex);
-        info->srcCount--; // it gets incremented below.
     }
     else if (addr->gtOper == GT_ARR_ELEM)
     {
@@ -2760,25 +2999,9 @@ void Lowering::SetIndirAddrOpCounts(GenTreePtr indirTree)
         assert(addr->gtLsraInfo.srcCount >= 2);
         addr->gtLsraInfo.srcCount -= 1;
     }
-    else
-    {
-        // it is nothing but a plain indir
-        info->srcCount--; // base gets added in below
-        base = addr;
-    }
-
-    if (base != nullptr)
-    {
-        info->srcCount++;
-    }
-
-    if (index != nullptr && !modifiedSources)
-    {
-        info->srcCount++;
-    }
 }
 
-void Lowering::LowerCmp(GenTreePtr tree)
+void Lowering::TreeNodeInfoInitCmp(GenTreePtr tree)
 {
     TreeNodeInfo* info = &(tree->gtLsraInfo);
 
@@ -2981,7 +3204,7 @@ void Lowering::LowerCmp(GenTreePtr tree)
                             // so that we can generate a test instruction.
 
                             // Reverse the equality comparison
-                            tree->gtOper = (tree->gtOper == GT_EQ) ? GT_NE : GT_EQ;
+                            tree->SetOperRaw((tree->gtOper == GT_EQ) ? GT_NE : GT_EQ);
 
                             // Change the relOp2CnsVal to zero
                             relOp2CnsVal = 0;
@@ -3144,8 +3367,9 @@ void Lowering::LowerCmp(GenTreePtr tree)
 #ifdef DEBUG
                         if (comp->verbose)
                         {
-                            printf("LowerCmp: Removing a GT_CAST to TYP_UBYTE and changing castOp1->gtType to "
-                                   "TYP_UBYTE\n");
+                            printf(
+                                "TreeNodeInfoInitCmp: Removing a GT_CAST to TYP_UBYTE and changing castOp1->gtType to "
+                                "TYP_UBYTE\n");
                             comp->gtDispTreeRange(BlockRange(), tree);
                         }
 #endif
@@ -3169,6 +3393,13 @@ void Lowering::LowerCmp(GenTreePtr tree)
         else if (op1->isMemoryOp() && IsSafeToContainMem(tree, op1))
         {
             MakeSrcContained(tree, op1);
+        }
+        else if (op1->IsCnsIntOrI())
+        {
+            // TODO-CQ: We should be able to support swapping op1 and op2 to generate cmp reg, imm,
+            // but there is currently an assert in CodeGen::genCompareInt().
+            // https://github.com/dotnet/coreclr/issues/7270
+            SetRegOptional(op2);
         }
         else
         {
@@ -3655,8 +3886,11 @@ bool Lowering::SetStoreIndOpCountsIfRMWMemOp(GenTreePtr storeInd)
  */
 void Lowering::SetMulOpCounts(GenTreePtr tree)
 {
+#if defined(_TARGET_X86_)
+    assert(tree->OperGet() == GT_MUL || tree->OperGet() == GT_MULHI || tree->OperGet() == GT_MUL_LONG);
+#else
     assert(tree->OperGet() == GT_MUL || tree->OperGet() == GT_MULHI);
-
+#endif
     TreeNodeInfo* info = &(tree->gtLsraInfo);
 
     info->srcCount = 2;
@@ -3697,13 +3931,18 @@ void Lowering::SetMulOpCounts(GenTreePtr tree)
     GenTreeIntConCommon* imm                    = nullptr;
     GenTreePtr           other                  = nullptr;
 
-    // There are three forms of x86 multiply:
-    // one-op form:     RDX:RAX = RAX * r/m
-    // two-op form:     reg *= r/m
-    // three-op form:   reg = r/m * imm
+// There are three forms of x86 multiply:
+// one-op form:     RDX:RAX = RAX * r/m
+// two-op form:     reg *= r/m
+// three-op form:   reg = r/m * imm
 
-    // This special widening 32x32->64 MUL is not used on x64
-    assert((tree->gtFlags & GTF_MUL_64RSLT) == 0);
+// This special widening 32x32->64 MUL is not used on x64
+#if defined(_TARGET_X86_)
+    if (tree->OperGet() != GT_MUL_LONG)
+#endif
+    {
+        assert((tree->gtFlags & GTF_MUL_64RSLT) == 0);
+    }
 
     // Multiply should never be using small types
     assert(!varTypeIsSmall(tree->TypeGet()));
@@ -3721,7 +3960,11 @@ void Lowering::SetMulOpCounts(GenTreePtr tree)
         info->setDstCandidates(m_lsra, RBM_RAX);
         hasImpliedFirstOperand = true;
     }
-    else if (tree->gtOper == GT_MULHI)
+    else if (tree->gtOper == GT_MULHI
+#if defined(_TARGET_X86_)
+             || tree->OperGet() == GT_MUL_LONG
+#endif
+             )
     {
         // have to use the encoding:RDX:RAX = RAX * rm
         info->setDstCandidates(m_lsra, RBM_RAX);
@@ -3817,21 +4060,23 @@ bool Lowering::isRMWRegOper(GenTreePtr tree)
         return false;
     }
 
-    // These Opers either support a three op form (i.e. GT_LEA), or do not read/write their first operand
-    if ((tree->OperGet() == GT_LEA) || (tree->OperGet() == GT_STOREIND) || (tree->OperGet() == GT_ARR_INDEX))
+    switch (tree->OperGet())
     {
-        return false;
-    }
+        // These Opers either support a three op form (i.e. GT_LEA), or do not read/write their first operand
+        case GT_LEA:
+        case GT_STOREIND:
+        case GT_ARR_INDEX:
+        case GT_STORE_BLK:
+        case GT_STORE_OBJ:
+            return false;
 
-    // x86/x64 does support a three op multiply when op2|op1 is a contained immediate
-    if ((tree->OperGet() == GT_MUL) &&
-        (Lowering::IsContainableImmed(tree, tree->gtOp.gtOp2) || Lowering::IsContainableImmed(tree, tree->gtOp.gtOp1)))
-    {
-        return false;
-    }
+        // x86/x64 does support a three op multiply when op2|op1 is a contained immediate
+        case GT_MUL:
+            return (!IsContainableImmed(tree, tree->gtOp.gtOp2) && !IsContainableImmed(tree, tree->gtOp.gtOp1));
 
-    // otherwise we return true.
-    return true;
+        default:
+            return true;
+    }
 }
 
 // anything is in range for AMD64

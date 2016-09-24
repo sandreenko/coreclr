@@ -3427,8 +3427,8 @@ void Module::EnumRegularStaticGCRefs(AppDomain* pAppDomain, promote_func* fn, Sc
     }
     CONTRACT_END;
 
-    _ASSERTE(GCHeap::IsGCInProgress() && 
-         GCHeap::IsServerHeap() && 
+    _ASSERTE(GCHeapUtilities::IsGCInProgress() && 
+         GCHeapUtilities::IsServerHeap() && 
          IsGCSpecialThread());
 
 
@@ -4280,7 +4280,11 @@ ISymUnmanagedReader *Module::GetISymUnmanagedReader(void)
             // On desktop, the framework installer is supposed to install diasymreader.dll as well
             // and so this shouldn't happen.
             hr = FakeCoCreateInstanceEx(CLSID_CorSymBinder_SxS,
+#ifdef FEATURE_CORECLR
+                                        NATIVE_SYMBOL_READER_DLL,
+#else
                                         GetInternalSystemDirectory(),
+#endif
                                         IID_ISymUnmanagedBinder,
                                         (void**)&pBinder,
                                         NULL);
@@ -6264,7 +6268,7 @@ Module *Module::GetModuleIfLoaded(mdFile kFile, BOOL onlyLoadedInAppDomain, BOOL
 #ifndef DACCESS_COMPILE
 #if defined(FEATURE_MULTIMODULE_ASSEMBLIES)
     // check if actually loaded, unless happens during GC (GC works only with loaded assemblies)
-    if (!GCHeap::IsGCInProgress() && onlyLoadedInAppDomain && pModule && !pModule->IsManifest())
+    if (!GCHeapUtilities::IsGCInProgress() && onlyLoadedInAppDomain && pModule && !pModule->IsManifest())
     {
         DomainModule *pDomainModule = pModule->FindDomainModule(GetAppDomain());
         if (pDomainModule == NULL || !pDomainModule->IsLoaded())

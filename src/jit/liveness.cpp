@@ -11,6 +11,10 @@
 #pragma hdrstop
 #endif
 
+#if !defined(_TARGET_64BIT_)
+#include "decomposelongs.h"
+#endif
+
 /*****************************************************************************
  *
  *  Helper for Compiler::fgPerBlockLocalVarLiveness().
@@ -1083,6 +1087,8 @@ void Compiler::fgExtendDbgLifetimes()
         VarSetOps::DiffD(this, initVars, block->bbLiveIn);
 
         /* Add statements initializing the vars, if there are any to initialize */
+        unsigned blockWeight = block->getBBWeight(this);
+
         VARSET_ITER_INIT(this, iter, initVars, varIndex);
         while (iter.NextElem(this, &varIndex))
         {
@@ -1098,34 +1104,43 @@ void Compiler::fgExtendDbgLifetimes()
                 continue;
             }
 
-            // TODO-LIR: the code below does not work for blocks that contain LIR. As a result,
-            //           we must run liveness at least once before any LIR is created in order
-            //           to ensure that this code doesn't attempt to insert HIR into LIR blocks.
-
             // If we haven't already done this ...
             if (!fgLocalVarLivenessDone)
             {
-                assert(!block->IsLIR());
-
                 // Create a "zero" node
-
-                GenTreePtr zero = gtNewZeroConNode(genActualType(type));
+                GenTree* zero = gtNewZeroConNode(genActualType(type));
 
                 // Create initialization node
+                if (!block->IsLIR())
+                {
+                    GenTree* varNode  = gtNewLclvNode(varNum, type);
+                    GenTree* initNode = gtNewAssignNode(varNode, zero);
 
-                GenTreePtr varNode  = gtNewLclvNode(varNum, type);
-                GenTreePtr initNode = gtNewAssignNode(varNode, zero);
-                GenTreePtr initStmt = gtNewStmt(initNode);
+                    // Create a statement for the initializer, sequence it, and append it to the current BB.
+                    GenTree* initStmt = gtNewStmt(initNode);
+                    gtSetStmtInfo(initStmt);
+                    fgSetStmtSeq(initStmt);
+                    fgInsertStmtNearEnd(block, initStmt);
+                }
+                else
+                {
+                    GenTree* store =
+                        new (this, GT_STORE_LCL_VAR) GenTreeLclVar(GT_STORE_LCL_VAR, type, varNum, BAD_IL_OFFSET);
+                    store->gtOp.gtOp1 = zero;
+                    store->gtFlags |= (GTF_VAR_DEF | GTF_ASG);
 
-                gtSetStmtInfo(initStmt);
+                    LIR::Range initRange = LIR::EmptyRange();
+                    initRange.InsertBefore(nullptr, zero, store);
 
-                /* Assign numbers and next/prev links for this tree */
+#if !defined(_TARGET_64BIT_) && !defined(LEGACY_BACKEND)
+                    DecomposeLongs::DecomposeRange(this, blockWeight, initRange);
+#endif // !defined(_TARGET_64BIT_) && !defined(LEGACY_BACKEND)
 
-                fgSetStmtSeq(initStmt);
-
-                /* Finally append the statement to the current BB */
-
-                fgInsertStmtNearEnd(block, initStmt);
+                    // Naively inserting the initializer at the end of the block may add code after the block's
+                    // terminator, in which case the inserted code will never be executed (and the IR for the
+                    // block will be invalid). Use `LIR::InsertBeforeTerminator` to avoid this problem.
+                    LIR::InsertBeforeTerminator(block, std::move(initRange));
+                }
 
 #ifdef DEBUG
                 if (verbose)
@@ -1135,6 +1150,8 @@ void Compiler::fgExtendDbgLifetimes()
 #endif // DEBUG
 
                 varDsc->incRefCnts(block->getBBWeight(this), this);
+
+                block->bbFlags |= BBF_CHANGED; // indicates that the contents of the block have changed.
             }
 
             /* Update liveness information so that redoing fgLiveVarAnalysis()
@@ -1142,7 +1159,6 @@ void Compiler::fgExtendDbgLifetimes()
 
             VarSetOps::AddElemD(this, block->bbVarDef, varIndex);
             VarSetOps::AddElemD(this, block->bbLiveOut, varIndex);
-            block->bbFlags |= BBF_CHANGED; // indicates that the liveness info has changed
         }
     }
 
@@ -2468,27 +2484,27 @@ bool Compiler::fgRemoveDeadStore(
             {
                 return false;
             }
-            switch (nextNode->OperGet())
+            if (nextNode->OperIsIndir())
             {
-                default:
-                    break;
-                case GT_IND:
-                    asgNode = nextNode->gtNext;
-                    break;
-                case GT_STOREIND:
-                    asgNode = nextNode;
-                    break;
-                case GT_LIST:
+                // This must be a non-nullcheck form of indir, or it would not be a def.
+                assert(nextNode->OperGet() != GT_NULLCHECK);
+                if (nextNode->OperIsStore())
                 {
-                    GenTree* sizeNode = nextNode->gtNext;
-                    if ((sizeNode == nullptr) || (sizeNode->OperGet() != GT_CNS_INT))
+                    asgNode = nextNode;
+                    if (asgNode->OperIsBlk())
                     {
-                        return false;
+                        rhsNode = asgNode->AsBlk()->Data();
                     }
-                    asgNode = sizeNode->gtNext;
-                    rhsNode = nextNode->gtGetOp2();
+                    // TODO-1stClassStructs: There should be an else clause here to handle
+                    // the non-block forms of store ops (GT_STORE_LCL_VAR, etc.) for which
+                    // rhsNode is op1. (This isn't really a 1stClassStructs item, but the
+                    // above was added to catch what used to be dead block ops, and that
+                    // made this omission apparent.)
                 }
-                break;
+                else
+                {
+                    asgNode = nextNode->gtNext;
+                }
             }
         }
     }
@@ -2533,10 +2549,10 @@ bool Compiler::fgRemoveDeadStore(
             switch (asgNode->gtOper)
             {
                 case GT_ASG_ADD:
-                    asgNode->gtOper = GT_ADD;
+                    asgNode->SetOperRaw(GT_ADD);
                     break;
                 case GT_ASG_SUB:
-                    asgNode->gtOper = GT_SUB;
+                    asgNode->SetOperRaw(GT_SUB);
                     break;
                 default:
                     // Only add and sub allowed, we don't have ASG_MUL and ASG_DIV for ints, and
@@ -2619,6 +2635,17 @@ bool Compiler::fgRemoveDeadStore(
                     printf("\n");
                 }
 #endif // DEBUG
+                if (rhsNode->TypeGet() == TYP_STRUCT)
+                {
+                    // This is a block assignment. An indirection of the rhs is not considered to
+                    // happen until the assignment, so we will extract the side effects from only
+                    // the address.
+                    if (rhsNode->OperIsIndir())
+                    {
+                        assert(rhsNode->OperGet() != GT_NULLCHECK);
+                        rhsNode = rhsNode->AsIndir()->Addr();
+                    }
+                }
                 gtExtractSideEffList(rhsNode, &sideEffList);
 
                 if (sideEffList)

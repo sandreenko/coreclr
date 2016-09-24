@@ -73,7 +73,7 @@ inline HRESULT HRESULT_FROM_WIN32(unsigned long x)
 #define FALSE false
 
 #define CALLBACK __stdcall
-#define FORCEINLINE inline
+#define FORCEINLINE __forceinline
 
 #define INFINITE 0xFFFFFFFF
 
@@ -447,7 +447,7 @@ extern bool g_fFinalizerRunOnShutDown;
 // Locks
 //
 
-struct alloc_context;
+struct gc_alloc_context;
 class Thread;
 
 Thread * GetThread();

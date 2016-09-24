@@ -549,6 +549,10 @@ typedef unsigned short regPairNoSmall; // arm: need 12 bits
   #define RBM_LNGARG_0            (RBM_EAX|RBM_EDX)
   #define PREDICT_PAIR_LNGARG_0    PREDICT_PAIR_EAXEDX
 
+  #define REG_LNGARG_LO             REG_EAX
+  #define RBM_LNGARG_LO             RBM_EAX
+  #define REG_LNGARG_HI             REG_EDX
+  #define RBM_LNGARG_HI             RBM_EDX
   // register to hold shift amount
   #define REG_SHIFT                REG_ECX
   #define RBM_SHIFT                RBM_ECX
@@ -581,6 +585,10 @@ typedef unsigned short regPairNoSmall; // arm: need 12 bits
   #define RBM_CALLEE_TRASH_NOGC    RBM_EDX
 #endif // NOGC_WRITE_BARRIERS
 
+  // GenericPInvokeCalliHelper unmanaged target parameter
+  #define REG_PINVOKE_TARGET_PARAM REG_EAX
+  #define RBM_PINVOKE_TARGET_PARAM RBM_EAX
+
   // IL stub's secret parameter (CORJIT_FLG_PUBLISH_SECRET_PARAM)
   #define REG_SECRET_STUB_PARAM    REG_EAX
   #define RBM_SECRET_STUB_PARAM    RBM_EAX
@@ -589,6 +597,10 @@ typedef unsigned short regPairNoSmall; // arm: need 12 bits
   #define REG_VIRTUAL_STUB_PARAM   REG_EAX
   #define RBM_VIRTUAL_STUB_PARAM   RBM_EAX
   #define PREDICT_REG_VIRTUAL_STUB_PARAM  PREDICT_REG_EAX
+
+  // VSD target address register
+  #define REG_VIRTUAL_STUB_TARGET  REG_EAX
+  #define RBM_VIRTUAL_STUB_TARGET  RBM_EAX
 
   // Registers used by PInvoke frame setup
   #define REG_PINVOKE_FRAME        REG_EDI      // EDI is p/invoke "Frame" pointer argument to CORINFO_HELP_INIT_PINVOKE_FRAME helper
@@ -1140,19 +1152,6 @@ typedef unsigned short regPairNoSmall; // arm: need 12 bits
   #define INS_r_stosp              INS_r_stosq
 
 #elif defined(_TARGET_ARM_)
-
-  #define ARM_HAZARD_AVOIDANCE             // Avoid ARM hazard due to QualComm Krait processor bug.
-/*  
-  Krait Errata definition:
-
-             The problem occurs if following code pattern occurs starting at an address ending in FB8:
-  Address    
-0x*****FB8  T16 instruction
-0x*****FBA  T16 instruction
-0x*****FBC  T16 instruction
-0x*****FBE  T32 unconditional pc relative branch (spans 2 cache lines in sets 62 and 63)
-
-*/
 
   // TODO-ARM-CQ: Use shift for division by power of 2
   // TODO-ARM-CQ: Check for sdiv/udiv at runtime and generate it if available
@@ -2286,6 +2285,9 @@ inline regNumber regNextOfType(regNumber reg, var_types type)
 
 inline bool isRegPairType(int /* s/b "var_types" */ type)
 {
+#if !CPU_LONG_USES_REGPAIR
+    return false;
+#else
 #ifdef _TARGET_64BIT_
     return false;
 #elif CPU_HAS_FP_SUPPORT
@@ -2293,6 +2295,7 @@ inline bool isRegPairType(int /* s/b "var_types" */ type)
 #else
     return type == TYP_LONG || type == TYP_DOUBLE;
 #endif
+#endif // CPU_LONG_USES_REGPAIR
 }
 
 inline bool isFloatRegType(int /* s/b "var_types" */ type)

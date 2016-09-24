@@ -48,9 +48,6 @@ public:
                                    unsigned* cnsPtr,
                                    bool      nogen = false);
 
-    // This should move to CodeGenClassic.h after genCreateAddrMode() is no longer dependent upon it
-    void genIncRegBy(regNumber reg, ssize_t ival, GenTreePtr tree, var_types dstType = TYP_INT, bool ovfl = false);
-
 private:
 #if defined(_TARGET_XARCH_) && !FEATURE_STACK_FP_X87
     // Bit masks used in negating a float or double number.
@@ -490,11 +487,16 @@ protected:
     void genAmd64EmitterUnitTests();
 #endif
 
-//-------------------------------------------------------------------------
-//
-// End prolog/epilog generation
-//
-//-------------------------------------------------------------------------
+    //-------------------------------------------------------------------------
+    //
+    // End prolog/epilog generation
+    //
+    //-------------------------------------------------------------------------
+
+    void      genSinglePush();
+    void      genSinglePop();
+    regMaskTP genPushRegs(regMaskTP regs, regMaskTP* byrefRegs, regMaskTP* noRefRegs);
+    void genPopRegs(regMaskTP regs, regMaskTP byrefRegs, regMaskTP noRefRegs);
 
 /*****************************************************************************/
 #ifdef DEBUGGING_SUPPORT

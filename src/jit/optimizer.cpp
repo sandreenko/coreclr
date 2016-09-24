@@ -6226,9 +6226,28 @@ bool Compiler::optHoistLoopExprsForTree(
         // be hoisted so that they are evaluated in the same order as they would have been in the loop,
         // and therefore throw exceptions in the same order.  (So we don't use GTF_GLOBALLY_VISIBLE_SIDE_EFFECTS
         // here, since that includes exceptions.)
-        if (tree->gtFlags & GTF_CALL)
+        if (tree->IsCall())
         {
-            *pFirstBlockAndBeforeSideEffect = false;
+            // If it's a call, it must be a helper call that does not mutate the heap.
+            // Further, if it may run a cctor, it must be labeled as "Hoistable"
+            // (meaning it won't run a cctor because the class is not precise-init).
+            GenTreeCall* call = tree->AsCall();
+            if (call->gtCallType != CT_HELPER)
+            {
+                *pFirstBlockAndBeforeSideEffect = false;
+            }
+            else
+            {
+                CorInfoHelpFunc helpFunc = eeGetHelperNum(call->gtCallMethHnd);
+                if (s_helperCallProperties.MutatesHeap(helpFunc))
+                {
+                    *pFirstBlockAndBeforeSideEffect = false;
+                }
+                else if (s_helperCallProperties.MayRunCctor(helpFunc) && (call->gtFlags & GTF_CALL_HOISTABLE) == 0)
+                {
+                    *pFirstBlockAndBeforeSideEffect = false;
+                }
+            }
         }
         else if (tree->OperIsAssignment())
         {
@@ -6936,6 +6955,16 @@ void Compiler::optComputeLoopSideEffectsOfBlock(BasicBlock* blk)
                         }
                     }
                 }
+                else if (lhs->OperIsBlk())
+                {
+                    GenTreeLclVarCommon* lclVarTree;
+                    bool                 isEntire;
+                    if (!tree->DefinesLocal(this, &lclVarTree, &isEntire))
+                    {
+                        // For now, assume arbitrary side effects on the heap...
+                        heapHavoc = true;
+                    }
+                }
                 else if (lhs->OperGet() == GT_CLS_VAR)
                 {
                     AddModifiedFieldAllContainingLoops(mostNestedLoop, lhs->gtClsVar.gtClsVarHnd);
@@ -6991,21 +7020,6 @@ void Compiler::optComputeLoopSideEffectsOfBlock(BasicBlock* blk)
                             }
                         }
                         break;
-
-                    case GT_INITBLK:
-                    case GT_COPYBLK:
-                    case GT_COPYOBJ:
-                    {
-                        GenTreeLclVarCommon* lclVarTree;
-                        bool                 isEntire;
-                        if (!tree->DefinesLocal(this, &lclVarTree, &isEntire))
-                        {
-                            // For now, assume arbitrary side effects on the heap...
-                            // TODO-CQ: Why not be complete, and get this case right?
-                            heapHavoc = true;
-                        }
-                    }
-                    break;
 
                     case GT_LOCKADD: // Binop
                     case GT_XADD:    // Binop
@@ -7677,6 +7691,17 @@ bool Compiler::optExtractArrIndex(GenTreePtr tree, ArrIndex* result, unsigned lh
     {
         return false;
     }
+    // It used to be the case that arrBndsChks for struct types would fail the previous check because
+    // after->gtOper was an address (for a block op).  In order to avoid asmDiffs we will for now
+    // return false if the type of 'after' is a struct type.  (This was causing us to clone loops
+    // that we were not previously cloning.)
+    // TODO-1stClassStructs: Remove this check to enable optimization of array bounds checks for struct
+    // types.
+    if (varTypeIsStruct(after))
+    {
+        return false;
+    }
+
     GenTreePtr sibo = after->gtGetOp1();
     if (sibo->gtOper != GT_ADD)
     {
