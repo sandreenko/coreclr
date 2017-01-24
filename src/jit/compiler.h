@@ -2809,6 +2809,18 @@ protected:
                             CORINFO_CALL_INFO* callInfo,
                             IL_OFFSET          rawILOffset);
 
+	var_types appendCallResult(OPCODE opcode,
+		CORINFO_RESOLVED_TOKEN* pResolvedToken,
+		CORINFO_CALL_INFO* callInfo,
+		var_types callRetTyp,
+		CORINFO_SIG_INFO*& sig,
+		unsigned clsFlags,
+		GenTreePtr& call,
+		bool readonlyCall,
+		bool checkForSmallType,
+		bool bIntrinsicImported);
+
+
     bool impMethodInfo_hasRetBuffArg(CORINFO_METHOD_INFO* methInfo);
 
     GenTreePtr impFixupCallStructReturn(GenTreePtr call, CORINFO_CLASS_HANDLE retClsHnd);
@@ -3273,7 +3285,7 @@ private:
     bool impIsImplicitTailCallCandidate(
         OPCODE curOpcode, const BYTE* codeAddrOfNextOpcode, const BYTE* codeEnd, int prefixFlags, bool isRecursive);
 
-    /*
+	/*
     XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
     XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
     XX                                                                           XX

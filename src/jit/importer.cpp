@@ -6356,6 +6356,7 @@ bool Compiler::impIsImplicitTailCallCandidate(
 #pragma warning(disable : 21000) // Suppress PREFast warning about overly large function
 #endif
 
+
 var_types Compiler::impImportCall(OPCODE                  opcode,
                                   CORINFO_RESOLVED_TOKEN* pResolvedToken,
                                   CORINFO_RESOLVED_TOKEN* pConstrainedResolvedToken,
@@ -6589,7 +6590,8 @@ var_types Compiler::impImportCall(OPCODE                  opcode,
 #endif
 
                 bIntrinsicImported = true;
-                goto DONE_CALL;
+				return appendCallResult(opcode, pResolvedToken, callInfo, callRetTyp, sig, clsFlags, call, readonlyCall, checkForSmallType, bIntrinsicImported);
+
             }
         }
 
@@ -6600,7 +6602,8 @@ var_types Compiler::impImportCall(OPCODE                  opcode,
             if (call != nullptr)
             {
                 bIntrinsicImported = true;
-                goto DONE_CALL;
+				return appendCallResult(opcode, pResolvedToken, callInfo, callRetTyp, sig, clsFlags, call, readonlyCall, checkForSmallType, bIntrinsicImported);
+
             }
         }
 #endif // FEATURE_SIMD
@@ -6608,7 +6611,6 @@ var_types Compiler::impImportCall(OPCODE                  opcode,
         if ((mflags & CORINFO_FLG_VIRTUAL) && (mflags & CORINFO_FLG_EnC) && (opcode == CEE_CALLVIRT))
         {
             NO_WAY("Virtual call to a function added via EnC is not supported");
-            goto DONE_CALL;
         }
 
         if ((sig->callConv & CORINFO_CALLCONV_MASK) != CORINFO_CALLCONV_DEFAULT &&
@@ -6792,11 +6794,6 @@ var_types Compiler::impImportCall(OPCODE                  opcode,
                     call->gtFlags |= GTF_CALL_NULLCHECK;
                 }
 #endif
-
-                // Sine we are jumping over some code, check that its OK to skip that code
-                assert((sig->callConv & CORINFO_CALLCONV_MASK) != CORINFO_CALLCONV_VARARG &&
-                       (sig->callConv & CORINFO_CALLCONV_MASK) != CORINFO_CALLCONV_NATIVEVARARG);
-                goto DONE;
             }
 
             case CORINFO_CALL:
@@ -7062,8 +7059,6 @@ var_types Compiler::impImportCall(OPCODE                  opcode,
         checkForSmallType = true;
 
         impPopArgsForUnmanagedCall(call, sig);
-
-        goto DONE;
     }
     else if ((opcode == CEE_CALLI) && (((sig->callConv & CORINFO_CALLCONV_MASK) == CORINFO_CALLCONV_STDCALL) ||
                                        ((sig->callConv & CORINFO_CALLCONV_MASK) == CORINFO_CALLCONV_C) ||
@@ -7114,294 +7109,290 @@ var_types Compiler::impImportCall(OPCODE                  opcode,
             szCanTailCallFailReason = "PInvoke calli";
         }
     }
+	if (!(call->gtFlags & GTF_CALL_UNMANAGED))
+	{
+		/*-------------------------------------------------------------------------
+		 * Create the argument list
+		 */
 
-    /*-------------------------------------------------------------------------
-     * Create the argument list
-     */
+		 //-------------------------------------------------------------------------
+		 // Special case - for varargs we have an implicit last argument
 
-    //-------------------------------------------------------------------------
-    // Special case - for varargs we have an implicit last argument
+		if ((sig->callConv & CORINFO_CALLCONV_MASK) == CORINFO_CALLCONV_VARARG)
+		{
+			assert(!compIsForInlining());
 
-    if ((sig->callConv & CORINFO_CALLCONV_MASK) == CORINFO_CALLCONV_VARARG)
-    {
-        assert(!compIsForInlining());
+			void *varCookie, *pVarCookie;
+			if (!info.compCompHnd->canGetVarArgsHandle(sig))
+			{
+				compInlineResult->NoteFatal(InlineObservation::CALLSITE_CANT_EMBED_VARARGS_COOKIE);
+				return callRetTyp;
+			}
 
-        void *varCookie, *pVarCookie;
-        if (!info.compCompHnd->canGetVarArgsHandle(sig))
-        {
-            compInlineResult->NoteFatal(InlineObservation::CALLSITE_CANT_EMBED_VARARGS_COOKIE);
-            return callRetTyp;
-        }
+			varCookie = info.compCompHnd->getVarArgsHandle(sig, &pVarCookie);
+			assert((!varCookie) != (!pVarCookie));
+			GenTreePtr cookie = gtNewIconEmbHndNode(varCookie, pVarCookie, GTF_ICON_VARG_HDL);
 
-        varCookie = info.compCompHnd->getVarArgsHandle(sig, &pVarCookie);
-        assert((!varCookie) != (!pVarCookie));
-        GenTreePtr cookie = gtNewIconEmbHndNode(varCookie, pVarCookie, GTF_ICON_VARG_HDL);
+			assert(extraArg == nullptr);
+			extraArg = gtNewArgList(cookie);
+		}
 
-        assert(extraArg == nullptr);
-        extraArg = gtNewArgList(cookie);
-    }
+		//-------------------------------------------------------------------------
+		// Extra arg for shared generic code and array methods
+		//
+		// Extra argument containing instantiation information is passed in the
+		// following circumstances:
+		// (a) To the "Address" method on array classes; the extra parameter is
+		//     the array's type handle (a TypeDesc)
+		// (b) To shared-code instance methods in generic structs; the extra parameter
+		//     is the struct's type handle (a vtable ptr)
+		// (c) To shared-code per-instantiation non-generic static methods in generic
+		//     classes and structs; the extra parameter is the type handle
+		// (d) To shared-code generic methods; the extra parameter is an
+		//     exact-instantiation MethodDesc
+		//
+		// We also set the exact type context associated with the call so we can
+		// inline the call correctly later on.
 
-    //-------------------------------------------------------------------------
-    // Extra arg for shared generic code and array methods
-    //
-    // Extra argument containing instantiation information is passed in the
-    // following circumstances:
-    // (a) To the "Address" method on array classes; the extra parameter is
-    //     the array's type handle (a TypeDesc)
-    // (b) To shared-code instance methods in generic structs; the extra parameter
-    //     is the struct's type handle (a vtable ptr)
-    // (c) To shared-code per-instantiation non-generic static methods in generic
-    //     classes and structs; the extra parameter is the type handle
-    // (d) To shared-code generic methods; the extra parameter is an
-    //     exact-instantiation MethodDesc
-    //
-    // We also set the exact type context associated with the call so we can
-    // inline the call correctly later on.
+		if (sig->callConv & CORINFO_CALLCONV_PARAMTYPE)
+		{
+			assert(call->gtCall.gtCallType == CT_USER_FUNC);
+			if (clsHnd == nullptr)
+			{
+				NO_WAY("CALLI on parameterized type");
+			}
 
-    if (sig->callConv & CORINFO_CALLCONV_PARAMTYPE)
-    {
-        assert(call->gtCall.gtCallType == CT_USER_FUNC);
-        if (clsHnd == nullptr)
-        {
-            NO_WAY("CALLI on parameterized type");
-        }
+			assert(opcode != CEE_CALLI);
 
-        assert(opcode != CEE_CALLI);
+			GenTreePtr instParam;
+			BOOL       runtimeLookup;
 
-        GenTreePtr instParam;
-        BOOL       runtimeLookup;
+			// Instantiated generic method
+			if (((SIZE_T)exactContextHnd & CORINFO_CONTEXTFLAGS_MASK) == CORINFO_CONTEXTFLAGS_METHOD)
+			{
+				CORINFO_METHOD_HANDLE exactMethodHandle =
+					(CORINFO_METHOD_HANDLE)((SIZE_T)exactContextHnd & ~CORINFO_CONTEXTFLAGS_MASK);
 
-        // Instantiated generic method
-        if (((SIZE_T)exactContextHnd & CORINFO_CONTEXTFLAGS_MASK) == CORINFO_CONTEXTFLAGS_METHOD)
-        {
-            CORINFO_METHOD_HANDLE exactMethodHandle =
-                (CORINFO_METHOD_HANDLE)((SIZE_T)exactContextHnd & ~CORINFO_CONTEXTFLAGS_MASK);
-
-            if (!exactContextNeedsRuntimeLookup)
-            {
+				if (!exactContextNeedsRuntimeLookup)
+				{
 #ifdef FEATURE_READYTORUN_COMPILER
-                if (opts.IsReadyToRun())
-                {
-                    instParam =
-                        impReadyToRunLookupToTree(&callInfo->instParamLookup, GTF_ICON_METHOD_HDL, exactMethodHandle);
-                    if (instParam == nullptr)
-                    {
-                        return callRetTyp;
-                    }
-                }
-                else
+					if (opts.IsReadyToRun())
+					{
+						instParam =
+							impReadyToRunLookupToTree(&callInfo->instParamLookup, GTF_ICON_METHOD_HDL, exactMethodHandle);
+						if (instParam == nullptr)
+						{
+							return callRetTyp;
+						}
+					}
+					else
 #endif
-                {
-                    instParam = gtNewIconEmbMethHndNode(exactMethodHandle);
-                    info.compCompHnd->methodMustBeLoadedBeforeCodeIsRun(exactMethodHandle);
-                }
-            }
-            else
-            {
-                instParam = impTokenToHandle(pResolvedToken, &runtimeLookup, TRUE /*mustRestoreHandle*/);
-                if (instParam == nullptr)
-                {
-                    return callRetTyp;
-                }
-            }
-        }
+					{
+						instParam = gtNewIconEmbMethHndNode(exactMethodHandle);
+						info.compCompHnd->methodMustBeLoadedBeforeCodeIsRun(exactMethodHandle);
+					}
+				}
+				else
+				{
+					instParam = impTokenToHandle(pResolvedToken, &runtimeLookup, TRUE /*mustRestoreHandle*/);
+					if (instParam == nullptr)
+					{
+						return callRetTyp;
+					}
+				}
+			}
 
-        // otherwise must be an instance method in a generic struct,
-        // a static method in a generic type, or a runtime-generated array method
-        else
-        {
-            assert(((SIZE_T)exactContextHnd & CORINFO_CONTEXTFLAGS_MASK) == CORINFO_CONTEXTFLAGS_CLASS);
-            CORINFO_CLASS_HANDLE exactClassHandle =
-                (CORINFO_CLASS_HANDLE)((SIZE_T)exactContextHnd & ~CORINFO_CONTEXTFLAGS_MASK);
+			// otherwise must be an instance method in a generic struct,
+			// a static method in a generic type, or a runtime-generated array method
+			else
+			{
+				assert(((SIZE_T)exactContextHnd & CORINFO_CONTEXTFLAGS_MASK) == CORINFO_CONTEXTFLAGS_CLASS);
+				CORINFO_CLASS_HANDLE exactClassHandle =
+					(CORINFO_CLASS_HANDLE)((SIZE_T)exactContextHnd & ~CORINFO_CONTEXTFLAGS_MASK);
 
-            if (compIsForInlining() && (clsFlags & CORINFO_FLG_ARRAY) != 0)
-            {
-                compInlineResult->NoteFatal(InlineObservation::CALLEE_IS_ARRAY_METHOD);
-                return callRetTyp;
-            }
+				if (compIsForInlining() && (clsFlags & CORINFO_FLG_ARRAY) != 0)
+				{
+					compInlineResult->NoteFatal(InlineObservation::CALLEE_IS_ARRAY_METHOD);
+					return callRetTyp;
+				}
 
-            if ((clsFlags & CORINFO_FLG_ARRAY) && readonlyCall)
-            {
-                // We indicate "readonly" to the Address operation by using a null
-                // instParam.
-                instParam = gtNewIconNode(0, TYP_REF);
-            }
+				if ((clsFlags & CORINFO_FLG_ARRAY) && readonlyCall)
+				{
+					// We indicate "readonly" to the Address operation by using a null
+					// instParam.
+					instParam = gtNewIconNode(0, TYP_REF);
+				}
 
-            if (!exactContextNeedsRuntimeLookup)
-            {
+				if (!exactContextNeedsRuntimeLookup)
+				{
 #ifdef FEATURE_READYTORUN_COMPILER
-                if (opts.IsReadyToRun())
-                {
-                    instParam =
-                        impReadyToRunLookupToTree(&callInfo->instParamLookup, GTF_ICON_CLASS_HDL, exactClassHandle);
-                    if (instParam == nullptr)
-                    {
-                        return callRetTyp;
-                    }
-                }
-                else
+					if (opts.IsReadyToRun())
+					{
+						instParam =
+							impReadyToRunLookupToTree(&callInfo->instParamLookup, GTF_ICON_CLASS_HDL, exactClassHandle);
+						if (instParam == nullptr)
+						{
+							return callRetTyp;
+						}
+					}
+					else
 #endif
-                {
-                    instParam = gtNewIconEmbClsHndNode(exactClassHandle);
-                    info.compCompHnd->classMustBeLoadedBeforeCodeIsRun(exactClassHandle);
-                }
-            }
-            else
-            {
-                instParam = impParentClassTokenToHandle(pResolvedToken, &runtimeLookup, TRUE /*mustRestoreHandle*/);
-                if (instParam == nullptr)
-                {
-                    return callRetTyp;
-                }
-            }
-        }
+					{
+						instParam = gtNewIconEmbClsHndNode(exactClassHandle);
+						info.compCompHnd->classMustBeLoadedBeforeCodeIsRun(exactClassHandle);
+					}
+				}
+				else
+				{
+					instParam = impParentClassTokenToHandle(pResolvedToken, &runtimeLookup, TRUE /*mustRestoreHandle*/);
+					if (instParam == nullptr)
+					{
+						return callRetTyp;
+					}
+				}
+			}
 
-        assert(extraArg == nullptr);
-        extraArg = gtNewArgList(instParam);
-    }
+			assert(extraArg == nullptr);
+			extraArg = gtNewArgList(instParam);
+		}
 
-    // Inlining may need the exact type context (exactContextHnd) if we're inlining shared generic code, in particular
-    // to inline 'polytypic' operations such as static field accesses, type tests and method calls which
-    // rely on the exact context. The exactContextHnd is passed back to the JitInterface at appropriate points.
-    // exactContextHnd is not currently required when inlining shared generic code into shared
-    // generic code, since the inliner aborts whenever shared code polytypic operations are encountered
-    // (e.g. anything marked needsRuntimeLookup)
-    if (exactContextNeedsRuntimeLookup)
-    {
-        exactContextHnd = nullptr;
-    }
+		// Inlining may need the exact type context (exactContextHnd) if we're inlining shared generic code, in particular
+		// to inline 'polytypic' operations such as static field accesses, type tests and method calls which
+		// rely on the exact context. The exactContextHnd is passed back to the JitInterface at appropriate points.
+		// exactContextHnd is not currently required when inlining shared generic code into shared
+		// generic code, since the inliner aborts whenever shared code polytypic operations are encountered
+		// (e.g. anything marked needsRuntimeLookup)
+		if (exactContextNeedsRuntimeLookup)
+		{
+			exactContextHnd = nullptr;
+		}
 
-    //-------------------------------------------------------------------------
-    // The main group of arguments
+		//-------------------------------------------------------------------------
+		// The main group of arguments
 
-    args = call->gtCall.gtCallArgs = impPopList(sig->numArgs, &argFlags, sig, extraArg);
+		args = call->gtCall.gtCallArgs = impPopList(sig->numArgs, &argFlags, sig, extraArg);
 
-    if (args)
-    {
-        call->gtFlags |= args->gtFlags & GTF_GLOB_EFFECT;
-    }
+		if (args)
+		{
+			call->gtFlags |= args->gtFlags & GTF_GLOB_EFFECT;
+		}
 
-    //-------------------------------------------------------------------------
-    // The "this" pointer
+		//-------------------------------------------------------------------------
+		// The "this" pointer
 
-    if (!(mflags & CORINFO_FLG_STATIC) && !((opcode == CEE_NEWOBJ) && (newobjThis == nullptr)))
-    {
-        GenTreePtr obj;
+		if (!(mflags & CORINFO_FLG_STATIC) && !((opcode == CEE_NEWOBJ) && (newobjThis == nullptr)))
+		{
+			GenTreePtr obj;
 
-        if (opcode == CEE_NEWOBJ)
-        {
-            obj = newobjThis;
-        }
-        else
-        {
-            obj = impPopStack().val;
-            obj = impTransformThis(obj, pConstrainedResolvedToken, constraintCallThisTransform);
-            if (compDonotInline())
-            {
-                return callRetTyp;
-            }
-        }
+			if (opcode == CEE_NEWOBJ)
+			{
+				obj = newobjThis;
+			}
+			else
+			{
+				obj = impPopStack().val;
+				obj = impTransformThis(obj, pConstrainedResolvedToken, constraintCallThisTransform);
+				if (compDonotInline())
+				{
+					return callRetTyp;
+				}
+			}
 
-        /* Is this a virtual or interface call? */
+			/* Is this a virtual or interface call? */
 
-        if ((call->gtFlags & GTF_CALL_VIRT_KIND_MASK) != GTF_CALL_NONVIRT)
-        {
-            /* only true object pointers can be virtual */
+			if ((call->gtFlags & GTF_CALL_VIRT_KIND_MASK) != GTF_CALL_NONVIRT)
+			{
+				/* only true object pointers can be virtual */
 
-            assert(obj->gtType == TYP_REF);
-        }
-        else
-        {
-            if (impIsThis(obj))
-            {
-                call->gtCall.gtCallMoreFlags |= GTF_CALL_M_NONVIRT_SAME_THIS;
-            }
-        }
+				assert(obj->gtType == TYP_REF);
+			}
+			else
+			{
+				if (impIsThis(obj))
+				{
+					call->gtCall.gtCallMoreFlags |= GTF_CALL_M_NONVIRT_SAME_THIS;
+				}
+			}
 
-        /* Store the "this" value in the call */
+			/* Store the "this" value in the call */
 
-        call->gtFlags |= obj->gtFlags & GTF_GLOB_EFFECT;
-        call->gtCall.gtCallObjp = obj;
-    }
+			call->gtFlags |= obj->gtFlags & GTF_GLOB_EFFECT;
+			call->gtCall.gtCallObjp = obj;
+		}
 
-    //-------------------------------------------------------------------------
-    // The "this" pointer for "newobj"
+		//-------------------------------------------------------------------------
+		// The "this" pointer for "newobj"
 
-    if (opcode == CEE_NEWOBJ)
-    {
-        if (clsFlags & CORINFO_FLG_VAROBJSIZE)
-        {
-            assert(!(clsFlags & CORINFO_FLG_ARRAY)); // arrays handled separately
-            // This is a 'new' of a variable sized object, wher
-            // the constructor is to return the object.  In this case
-            // the constructor claims to return VOID but we know it
-            // actually returns the new object
-            assert(callRetTyp == TYP_VOID);
-            callRetTyp   = TYP_REF;
-            call->gtType = TYP_REF;
-            impSpillSpecialSideEff();
+		if (opcode == CEE_NEWOBJ)
+		{
+			if (clsFlags & CORINFO_FLG_VAROBJSIZE)
+			{
+				assert(!(clsFlags & CORINFO_FLG_ARRAY)); // arrays handled separately
+				// This is a 'new' of a variable sized object, wher
+				// the constructor is to return the object.  In this case
+				// the constructor claims to return VOID but we know it
+				// actually returns the new object
+				assert(callRetTyp == TYP_VOID);
+				callRetTyp = TYP_REF;
+				call->gtType = TYP_REF;
+				impSpillSpecialSideEff();
 
-            impPushOnStack(call, typeInfo(TI_REF, clsHnd));
-        }
-        else
-        {
-            if (clsFlags & CORINFO_FLG_DELEGATE)
-            {
-                // New inliner morph it in impImportCall.
-                // This will allow us to inline the call to the delegate constructor.
-                call = fgOptimizeDelegateConstructor(call, &exactContextHnd);
-            }
-
-            if (!bIntrinsicImported)
-            {
+				impPushOnStack(call, typeInfo(TI_REF, clsHnd));
+			}
+			else
+			{
+				if (clsFlags & CORINFO_FLG_DELEGATE)
+				{
+					// New inliner morph it in impImportCall.
+					// This will allow us to inline the call to the delegate constructor.
+					call = fgOptimizeDelegateConstructor(call, &exactContextHnd);
+				}
 
 #if defined(DEBUG) || defined(INLINE_DATA)
 
-                // Keep track of the raw IL offset of the call
-                call->gtCall.gtRawILOffset = rawILOffset;
+				// Keep track of the raw IL offset of the call
+				call->gtCall.gtRawILOffset = rawILOffset;
 
 #endif // defined(DEBUG) || defined(INLINE_DATA)
 
-                // Is it an inline candidate?
-                impMarkInlineCandidate(call, exactContextHnd, callInfo);
-            }
+				// Is it an inline candidate?
+				impMarkInlineCandidate(call, exactContextHnd, callInfo);
 
-            // append the call node.
-            impAppendTree(call, (unsigned)CHECK_SPILL_ALL, impCurStmtOffs);
+				// append the call node.
+				impAppendTree(call, (unsigned)CHECK_SPILL_ALL, impCurStmtOffs);
 
-            // Now push the value of the 'new onto the stack
+				// Now push the value of the 'new onto the stack
 
-            // This is a 'new' of a non-variable sized object.
-            // Append the new node (op1) to the statement list,
-            // and then push the local holding the value of this
-            // new instruction on the stack.
+				// This is a 'new' of a non-variable sized object.
+				// Append the new node (op1) to the statement list,
+				// and then push the local holding the value of this
+				// new instruction on the stack.
 
-            if (clsFlags & CORINFO_FLG_VALUECLASS)
-            {
-                assert(newobjThis->gtOper == GT_ADDR && newobjThis->gtOp.gtOp1->gtOper == GT_LCL_VAR);
+				if (clsFlags & CORINFO_FLG_VALUECLASS)
+				{
+					assert(newobjThis->gtOper == GT_ADDR && newobjThis->gtOp.gtOp1->gtOper == GT_LCL_VAR);
 
-                unsigned tmp = newobjThis->gtOp.gtOp1->gtLclVarCommon.gtLclNum;
-                impPushOnStack(gtNewLclvNode(tmp, lvaGetRealType(tmp)), verMakeTypeInfo(clsHnd).NormaliseForStack());
-            }
-            else
-            {
-                if (newobjThis->gtOper == GT_COMMA)
-                {
-                    // In coreclr the callout can be inserted even if verification is disabled
-                    // so we cannot rely on tiVerificationNeeded alone
+					unsigned tmp = newobjThis->gtOp.gtOp1->gtLclVarCommon.gtLclNum;
+					impPushOnStack(gtNewLclvNode(tmp, lvaGetRealType(tmp)), verMakeTypeInfo(clsHnd).NormaliseForStack());
+				}
+				else
+				{
+					if (newobjThis->gtOper == GT_COMMA)
+					{
+						// In coreclr the callout can be inserted even if verification is disabled
+						// so we cannot rely on tiVerificationNeeded alone
 
-                    // We must have inserted the callout. Get the real newobj.
-                    newobjThis = newobjThis->gtOp.gtOp2;
-                }
+						// We must have inserted the callout. Get the real newobj.
+						newobjThis = newobjThis->gtOp.gtOp2;
+					}
 
-                assert(newobjThis->gtOper == GT_LCL_VAR);
-                impPushOnStack(gtNewLclvNode(newobjThis->gtLclVarCommon.gtLclNum, TYP_REF), typeInfo(TI_REF, clsHnd));
-            }
-        }
-        return callRetTyp;
-    }
-
-DONE:
+					assert(newobjThis->gtOper == GT_LCL_VAR);
+					impPushOnStack(gtNewLclvNode(newobjThis->gtLclVarCommon.gtLclNum, TYP_REF), typeInfo(TI_REF, clsHnd));
+				}
+			}
+			return callRetTyp;
+		}
+	}
 
     if (tailCall)
     {
@@ -7547,159 +7538,154 @@ DONE:
 // Note: we assume that small return types are already normalized by the managed callee
 // or by the pinvoke stub for calls to unmanaged code.
 
-DONE_CALL:
+		//
+		// Things needed to be checked when bIntrinsicImported is false.
+		//
 
-    if (!bIntrinsicImported)
-    {
-        //
-        // Things needed to be checked when bIntrinsicImported is false.
-        //
+	assert(call->gtOper == GT_CALL);
+	assert(sig != nullptr);
 
-        assert(call->gtOper == GT_CALL);
-        assert(sig != nullptr);
+	// Tail calls require us to save the call site's sig info so we can obtain an argument
+	// copying thunk from the EE later on.
+	if (call->gtCall.callSig == nullptr)
+	{
+		call->gtCall.callSig = new (this, CMK_CorSig) CORINFO_SIG_INFO;
+		*call->gtCall.callSig = *sig;
+	}
 
-        // Tail calls require us to save the call site's sig info so we can obtain an argument
-        // copying thunk from the EE later on.
-        if (call->gtCall.callSig == nullptr)
-        {
-            call->gtCall.callSig  = new (this, CMK_CorSig) CORINFO_SIG_INFO;
-            *call->gtCall.callSig = *sig;
-        }
+	if (compIsForInlining() && opcode == CEE_CALLVIRT)
+	{
+		GenTreePtr callObj = call->gtCall.gtCallObjp;
+		assert(callObj != nullptr);
 
-        if (compIsForInlining() && opcode == CEE_CALLVIRT)
-        {
-            GenTreePtr callObj = call->gtCall.gtCallObjp;
-            assert(callObj != nullptr);
+		unsigned callKind = call->gtFlags & GTF_CALL_VIRT_KIND_MASK;
 
-            unsigned callKind = call->gtFlags & GTF_CALL_VIRT_KIND_MASK;
-
-            if (((callKind != GTF_CALL_NONVIRT) || (call->gtFlags & GTF_CALL_NULLCHECK)) &&
-                impInlineIsGuaranteedThisDerefBeforeAnySideEffects(call->gtCall.gtCallArgs, callObj,
-                                                                   impInlineInfo->inlArgInfo))
-            {
-                impInlineInfo->thisDereferencedFirst = true;
-            }
-        }
+		if (((callKind != GTF_CALL_NONVIRT) || (call->gtFlags & GTF_CALL_NULLCHECK)) &&
+			impInlineIsGuaranteedThisDerefBeforeAnySideEffects(call->gtCall.gtCallArgs, callObj,
+				impInlineInfo->inlArgInfo))
+		{
+			impInlineInfo->thisDereferencedFirst = true;
+		}
+	}
 
 #if defined(DEBUG) || defined(INLINE_DATA)
 
-        // Keep track of the raw IL offset of the call
-        call->gtCall.gtRawILOffset = rawILOffset;
+	// Keep track of the raw IL offset of the call
+	call->gtCall.gtRawILOffset = rawILOffset;
 
 #endif // defined(DEBUG) || defined(INLINE_DATA)
 
-        // Is it an inline candidate?
-        impMarkInlineCandidate(call, exactContextHnd, callInfo);
-    }
-
+	// Is it an inline candidate?
+	impMarkInlineCandidate(call, exactContextHnd, callInfo);
     // Push or append the result of the call
-    if (callRetTyp == TYP_VOID)
-    {
-        if (opcode == CEE_NEWOBJ)
-        {
-            // we actually did push something, so don't spill the thing we just pushed.
-            assert(verCurrentState.esStackDepth > 0);
-            impAppendTree(call, verCurrentState.esStackDepth - 1, impCurStmtOffs);
-        }
-        else
-        {
-            impAppendTree(call, (unsigned)CHECK_SPILL_ALL, impCurStmtOffs);
-        }
-    }
-    else
-    {
-        impSpillSpecialSideEff();
-
-        if (clsFlags & CORINFO_FLG_ARRAY)
-        {
-            eeGetCallSiteSig(pResolvedToken->token, pResolvedToken->tokenScope, pResolvedToken->tokenContext, sig);
-        }
-
-        // Find the return type used for verification by interpreting the method signature.
-        // NB: we are clobbering the already established sig.
-        if (tiVerificationNeeded)
-        {
-            // Actually, we never get the sig for the original method.
-            sig = &(callInfo->verSig);
-        }
-
-        typeInfo tiRetVal = verMakeTypeInfo(sig->retType, sig->retTypeClass);
-        tiRetVal.NormaliseForStack();
-
-        // The CEE_READONLY prefix modifies the verification semantics of an Address
-        // operation on an array type.
-        if ((clsFlags & CORINFO_FLG_ARRAY) && readonlyCall && tiRetVal.IsByRef())
-        {
-            tiRetVal.SetIsReadonlyByRef();
-        }
-
-        if (tiVerificationNeeded)
-        {
-            // We assume all calls return permanent home byrefs. If they
-            // didn't they wouldn't be verifiable. This is also covering
-            // the Address() helper for multidimensional arrays.
-            if (tiRetVal.IsByRef())
-            {
-                tiRetVal.SetIsPermanentHomeByRef();
-            }
-        }
-
-        if (call->gtOper == GT_CALL)
-        {
-            // Sometimes "call" is not a GT_CALL (if we imported an intrinsic that didn't turn into a call)
-            if (varTypeIsStruct(callRetTyp))
-            {
-                call = impFixupCallStructReturn(call, sig->retTypeClass);
-            }
-
-            if ((call->gtFlags & GTF_CALL_INLINE_CANDIDATE) != 0)
-            {
-                assert(opts.OptEnabled(CLFLG_INLINING));
-
-                // Make the call its own tree (spill the stack if needed).
-                impAppendTree(call, (unsigned)CHECK_SPILL_ALL, impCurStmtOffs);
-
-                // TODO: Still using the widened type.
-                call = gtNewInlineCandidateReturnExpr(call, genActualType(callRetTyp));
-            }
-            else
-            {
-                // For non-candidates we must also spill, since we
-                // might have locals live on the eval stack that this
-                // call can modify.
-                impSpillSideEffects(true, CHECK_SPILL_ALL DEBUGARG("non-inline candidate call"));
-            }
-        }
-
-        if (!bIntrinsicImported)
-        {
-            //-------------------------------------------------------------------------
-            //
-            /* If the call is of a small type and the callee is managed, the callee will normalize the result
-                before returning.
-                However, we need to normalize small type values returned by unmanaged
-                functions (pinvoke). The pinvoke stub does the normalization, but we need to do it here
-                if we use the shorter inlined pinvoke stub. */
-
-            if (checkForSmallType && varTypeIsIntegral(callRetTyp) && genTypeSize(callRetTyp) < genTypeSize(TYP_INT))
-            {
-                call = gtNewCastNode(genActualType(callRetTyp), call, callRetTyp);
-            }
-        }
-
-        impPushOnStack(call, tiRetVal);
-    }
-
-    // VSD functions get a new call target each time we getCallInfo, so clear the cache.
-    // Also, the call info cache for CALLI instructions is largely incomplete, so clear it out.
-    // if ( (opcode == CEE_CALLI) || (callInfoCache.fetchCallInfo().kind == CORINFO_VIRTUALCALL_STUB))
-    //  callInfoCache.uncacheCallInfo();
-
-    return callRetTyp;
+	assert(!bIntrinsicImported);
+    return appendCallResult(opcode, pResolvedToken, callInfo, callRetTyp, sig, clsFlags, call, readonlyCall, checkForSmallType, bIntrinsicImported);
 }
 #ifdef _PREFAST_
 #pragma warning(pop)
 #endif
+
+var_types Compiler::appendCallResult(OPCODE opcode, CORINFO_RESOLVED_TOKEN* pResolvedToken, CORINFO_CALL_INFO* callInfo, var_types callRetTyp, CORINFO_SIG_INFO*& sig, unsigned clsFlags, GenTreePtr& call, bool readonlyCall, bool checkForSmallType, bool bIntrinsicImported)
+{
+	if (callRetTyp == TYP_VOID)
+	{
+		if (opcode == CEE_NEWOBJ)
+		{
+			// we actually did push something, so don't spill the thing we just pushed.
+			assert(verCurrentState.esStackDepth > 0);
+			impAppendTree(call, verCurrentState.esStackDepth - 1, impCurStmtOffs);
+		}
+		else
+		{
+			impAppendTree(call, (unsigned)CHECK_SPILL_ALL, impCurStmtOffs);
+		}
+	}
+	else
+	{
+		impSpillSpecialSideEff();
+
+		if (clsFlags & CORINFO_FLG_ARRAY)
+		{
+			eeGetCallSiteSig(pResolvedToken->token, pResolvedToken->tokenScope, pResolvedToken->tokenContext, sig);
+		}
+
+		// Find the return type used for verification by interpreting the method signature.
+		// NB: we are clobbering the already established sig.
+		if (tiVerificationNeeded)
+		{
+			// Actually, we never get the sig for the original method.
+			sig = &(callInfo->verSig);
+		}
+
+		typeInfo tiRetVal = verMakeTypeInfo(sig->retType, sig->retTypeClass);
+		tiRetVal.NormaliseForStack();
+
+		// The CEE_READONLY prefix modifies the verification semantics of an Address
+		// operation on an array type.
+		if ((clsFlags & CORINFO_FLG_ARRAY) && readonlyCall && tiRetVal.IsByRef())
+		{
+			tiRetVal.SetIsReadonlyByRef();
+		}
+
+		if (tiVerificationNeeded)
+		{
+			// We assume all calls return permanent home byrefs. If they
+			// didn't they wouldn't be verifiable. This is also covering
+			// the Address() helper for multidimensional arrays.
+			if (tiRetVal.IsByRef())
+			{
+				tiRetVal.SetIsPermanentHomeByRef();
+			}
+		}
+
+		if (call->gtOper == GT_CALL)
+		{
+			// Sometimes "call" is not a GT_CALL (if we imported an intrinsic that didn't turn into a call)
+			if (varTypeIsStruct(callRetTyp))
+			{
+				call = impFixupCallStructReturn(call, sig->retTypeClass);
+			}
+
+			if ((call->gtFlags & GTF_CALL_INLINE_CANDIDATE) != 0)
+			{
+				assert(opts.OptEnabled(CLFLG_INLINING));
+
+				// Make the call its own tree (spill the stack if needed).
+				impAppendTree(call, (unsigned)CHECK_SPILL_ALL, impCurStmtOffs);
+
+				// TODO: Still using the widened type.
+				call = gtNewInlineCandidateReturnExpr(call, genActualType(callRetTyp));
+			}
+			else
+			{
+				// For non-candidates we must also spill, since we
+				// might have locals live on the eval stack that this
+				// call can modify.
+				impSpillSideEffects(true, CHECK_SPILL_ALL DEBUGARG("non-inline candidate call"));
+			}
+		}
+
+		if (!bIntrinsicImported)
+		{
+			//-------------------------------------------------------------------------
+			//
+			/* If the call is of a small type and the callee is managed, the callee will normalize the result
+			before returning.
+			However, we need to normalize small type values returned by unmanaged
+			functions (pinvoke). The pinvoke stub does the normalization, but we need to do it here
+			if we use the shorter inlined pinvoke stub. */
+
+			if (checkForSmallType && varTypeIsIntegral(callRetTyp) && genTypeSize(callRetTyp) < genTypeSize(TYP_INT))
+			{
+				call = gtNewCastNode(genActualType(callRetTyp), call, callRetTyp);
+			}
+		}
+
+		impPushOnStack(call, tiRetVal);
+	}
+	return callRetTyp;
+}
+
 
 bool Compiler::impMethodInfo_hasRetBuffArg(CORINFO_METHOD_INFO* methInfo)
 {
