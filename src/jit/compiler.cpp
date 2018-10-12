@@ -2851,7 +2851,6 @@ void Compiler::compInitOptions(JitFlags* jitFlags)
     bool    dumpIRBlockHeaders = false;
     bool    dumpIRExit         = false;
     LPCWSTR dumpIRPhase        = nullptr;
-    LPCWSTR dumpIRFormat       = nullptr;
 
     if (!altJitConfig || opts.altJit)
     {
@@ -7180,17 +7179,6 @@ XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 void codeGeneratorCodeSizeBeg()
 {
 }
-/*****************************************************************************/
-
-/*****************************************************************************
- *
- *  If any temporary tables are smaller than 'genMinSize2free' we won't bother
- *  freeing them.
- */
-
-const size_t genMinSize2free = 64;
-
-/*****************************************************************************/
 
 /*****************************************************************************
  *
@@ -7603,7 +7591,6 @@ void CompTimeSummaryInfo::Print(FILE* f)
         return;
     }
 
-    bool   extraInfo  = (JitConfig.JitEECallTimingInfo() != 0);
     double totTime_ms = 0.0;
 
     fprintf(f, "JIT Compilation time report:\n");
@@ -7623,6 +7610,7 @@ void CompTimeSummaryInfo::Print(FILE* f)
         const char* extraHdr1 = "";
         const char* extraHdr2 = "";
 #if MEASURE_CLRAPI_CALLS
+        bool extraInfo = (JitConfig.JitEECallTimingInfo() != 0);
         if (extraInfo)
         {
             extraHdr1 = "    CLRs/meth   % in CLR";
@@ -7640,9 +7628,8 @@ void CompTimeSummaryInfo::Print(FILE* f)
         assert(_countof(PhaseNames) == PHASE_NUMBER_OF);
         for (int i = 0; i < PHASE_NUMBER_OF; i++)
         {
-            double phase_tot_ms  = (((double)m_total.m_cyclesByPhase[i]) / countsPerSec) * 1000.0;
-            double phase_max_ms  = (((double)m_maximum.m_cyclesByPhase[i]) / countsPerSec) * 1000.0;
-            double phase_tot_pct = 100.0 * phase_tot_ms / totTime_ms;
+            double phase_tot_ms = (((double)m_total.m_cyclesByPhase[i]) / countsPerSec) * 1000.0;
+            double phase_max_ms = (((double)m_maximum.m_cyclesByPhase[i]) / countsPerSec) * 1000.0;
 
 #if MEASURE_CLRAPI_CALLS
             // Skip showing CLR API call info if we didn't collect any
@@ -10987,15 +10974,8 @@ void cNodeIR(Compiler* comp, GenTree* tree)
 
 void cTreeIR(Compiler* comp, GenTree* tree)
 {
-    bool       foldLeafs    = comp->dumpIRNoLeafs;
-    bool       foldIndirs   = comp->dumpIRDataflow;
-    bool       foldLists    = comp->dumpIRNoLists;
-    bool       dataflowView = comp->dumpIRDataflow;
-    bool       dumpTypes    = comp->dumpIRTypes;
-    bool       dumpValnums  = comp->dumpIRValnums;
-    bool       noStmts      = comp->dumpIRNoStmts;
-    genTreeOps op           = tree->OperGet();
-    unsigned   childCount   = tree->NumChildren();
+    genTreeOps op         = tree->OperGet();
+    unsigned   childCount = tree->NumChildren();
     GenTree*   child;
 
     // Recurse and dump trees that this node depends on.
