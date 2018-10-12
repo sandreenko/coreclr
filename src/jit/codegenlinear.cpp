@@ -123,8 +123,6 @@ void CodeGen::genCodeForBBlist()
         }
     }
 
-    unsigned finallyNesting = 0;
-
     // Make sure a set is allocated for compiler->compCurLife (in the long case), so we can set it to empty without
     // allocation at the start of each basic block.
     VarSetOps::AssignNoCopy(compiler, compiler->compCurLife, VarSetOps::MakeEmpty(compiler));
@@ -1097,7 +1095,7 @@ void CodeGen::genConsumeRegAndCopy(GenTree* node, regNumber needReg)
     {
         return;
     }
-    regNumber treeReg = genConsumeReg(node);
+    genConsumeReg(node);
     genCopyRegIfNeeded(node, needReg);
 }
 
@@ -1796,9 +1794,8 @@ void CodeGen::genProduceReg(GenTree* tree)
 
                 for (unsigned i = 0; i < regCount; ++i)
                 {
-                    var_types type    = retTypeDesc->GetReturnRegType(i);
-                    regNumber fromReg = call->GetRegNumByIdx(i);
-                    regNumber toReg   = copy->GetRegNumByIdx(i);
+                    var_types type  = retTypeDesc->GetReturnRegType(i);
+                    regNumber toReg = copy->GetRegNumByIdx(i);
 
                     if (toReg != REG_NA)
                     {
