@@ -453,9 +453,6 @@ void Compiler::optAddCopies()
             noway_assert(tree && op1 && tree->OperIs(GT_ASG) && (op1->gtOper == GT_LCL_VAR) &&
                          (op1->gtLclVarCommon.gtLclNum == lclNum));
 
-            /*  TODO-Review: BB_UNITY_WEIGHT is not the correct block weight */
-            unsigned blockWeight = BB_UNITY_WEIGHT;
-
             /* Assign the old expression into the new temp */
 
             GenTree* newAsgn = gtNewTempAssign(copyLclNum, tree->gtOp.gtOp2);
@@ -1301,7 +1298,6 @@ AssertionIndex Compiler::optCreateAssertion(GenTree*         op1,
         {
             unsigned lclNum = op1->gtLclVarCommon.gtLclNum;
             noway_assert(lclNum < lvaCount);
-            LclVarDsc* lclVar = &lvaTable[lclNum];
 
             //  If the local variable is not in SSA then bail
             if (!lvaInSsa(lclNum))
@@ -2183,8 +2179,6 @@ AssertionIndex Compiler::optFindComplementary(AssertionIndex assertIndex)
         return index;
     }
 
-    optAssertionKind complementaryAssertionKind =
-        (inputAssertion->assertionKind == OAK_EQUAL) ? OAK_NOT_EQUAL : OAK_EQUAL;
     for (AssertionIndex index = 1; index <= optAssertionCount; ++index)
     {
         // Make sure assertion kinds are complementary and op1, op2 kinds match.
@@ -2384,8 +2378,7 @@ GenTree* Compiler::optVNConstantPropOnTree(BasicBlock* block, GenTree* stmt, Gen
         return nullptr;
     }
 
-    GenTree* newTree     = tree;
-    GenTree* sideEffList = nullptr;
+    GenTree* newTree = tree;
     switch (vnStore->TypeOfVN(vnCns))
     {
         case TYP_FLOAT:
@@ -3436,8 +3429,6 @@ GenTree* Compiler::optAssertionProp_Ind(ASSERT_VALARG_TP assertions, GenTree* tr
         return nullptr;
     }
 
-    unsigned lclNum = op1->gtLclVarCommon.gtLclNum;
-
 #ifdef DEBUG
     bool           vnBased = false;
     AssertionIndex index   = NO_ASSERTION_INDEX;
@@ -4333,7 +4324,6 @@ private:
     ASSERT_TP* mJumpDestOut;
     ASSERT_TP* mJumpDestGen;
 
-    Compiler*     m_pCompiler;
     BitVecTraits* apTraits;
 
 public:
@@ -4342,7 +4332,6 @@ public:
         , preMergeJumpDestOut(BitVecOps::UninitVal())
         , mJumpDestOut(jumpDestOut)
         , mJumpDestGen(jumpDestGen)
-        , m_pCompiler(pCompiler)
         , apTraits(pCompiler->apTraits)
     {
     }
