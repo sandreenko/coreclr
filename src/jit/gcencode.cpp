@@ -4163,11 +4163,7 @@ void GCInfo::gcMakeRegPtrTable(
      **************************************************************************
      */
 
-    unsigned count = 0;
-
-    int lastoffset = 0;
-
-    /* Count&Write untracked locals and non-enregistered args */
+    /* Write untracked locals and non-enregistered args */
 
     unsigned   varNum;
     LclVarDsc* varDsc;
@@ -4400,7 +4396,7 @@ void GCInfo::gcMakeRegPtrTable(
 
         for (regPtrDsc* genRegPtrTemp = gcRegPtrList; genRegPtrTemp != nullptr; genRegPtrTemp = genRegPtrTemp->rpdNext)
         {
-            int nextOffset = genRegPtrTemp->rpdOffs;
+            const int nextOffset = genRegPtrTemp->rpdOffs;
 
             if (genRegPtrTemp->rpdArg)
             {
@@ -4410,8 +4406,7 @@ void GCInfo::gcMakeRegPtrTable(
                     if ((mode == MAKE_REG_PTR_MODE_DO_WORK) && (regStackArgFirst != nullptr))
                     {
                         // Record any outgoing arguments as becoming dead
-                        gcInfoRecordGCStackArgsDead(gcInfoEncoder, genRegPtrTemp->rpdOffs, regStackArgFirst,
-                                                    genRegPtrTemp);
+                        gcInfoRecordGCStackArgsDead(gcInfoEncoder, nextOffset, regStackArgFirst, genRegPtrTemp);
                     }
                     regStackArgFirst = nullptr;
                 }
@@ -4440,8 +4435,7 @@ void GCInfo::gcMakeRegPtrTable(
                         if ((mode == MAKE_REG_PTR_MODE_DO_WORK) && (regStackArgFirst != nullptr))
                         {
                             // Record any outgoing arguments as becoming dead
-                            gcInfoRecordGCStackArgsDead(gcInfoEncoder, genRegPtrTemp->rpdOffs, regStackArgFirst,
-                                                        genRegPtrTemp);
+                            gcInfoRecordGCStackArgsDead(gcInfoEncoder, nextOffset, regStackArgFirst, genRegPtrTemp);
                         }
                         regStackArgFirst = nullptr;
                     }
