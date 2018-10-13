@@ -768,9 +768,8 @@ void LinearScan::setBlockSequence()
 
     assert(blockSequenceWorkList == nullptr);
 
-    bool addedInternalBlocks = false;
-    verifiedAllBBs           = false;
-    hasCriticalEdges         = false;
+    verifiedAllBBs   = false;
+    hasCriticalEdges = false;
     BasicBlock* nextBlock;
     // We use a bbNum of 0 for entry RefPositions.
     // The other information in blockInfo[0] will never be used.
@@ -2623,7 +2622,6 @@ regNumber LinearScan::tryAllocateFreeReg(Interval* currentInterval, RefPosition*
 
     LsraLocation currentLocation = refPosition->nodeLocation;
     RefPosition* nextRefPos      = refPosition->nextRefPosition;
-    LsraLocation nextLocation    = (nextRefPos == nullptr) ? currentLocation : nextRefPos->nodeLocation;
     regMaskTP    candidates      = refPosition->registerAssignment;
     regMaskTP    preferences     = currentInterval->registerPreferences;
 
@@ -3473,9 +3471,8 @@ regNumber LinearScan::allocateBusyReg(Interval* current, RefPosition* refPositio
         {
             continue;
         }
-        RegRecord*   physRegRecord  = getRegisterRecord(regNum);
-        RegRecord*   physRegRecord2 = nullptr; // only used for _TARGET_ARM_
-        LsraLocation nextLocation   = MinLocation;
+        RegRecord*   physRegRecord = getRegisterRecord(regNum);
+        LsraLocation nextLocation  = MinLocation;
         LsraLocation physRegNextLocation;
         if (!isSpillCandidate(current, refPosition, physRegRecord, nextLocation))
         {
@@ -3488,8 +3485,10 @@ regNumber LinearScan::allocateBusyReg(Interval* current, RefPosition* refPositio
         Interval*    assignedInterval        = physRegRecord->assignedInterval;
         unsigned     recentAssignedRefWeight = BB_ZERO_WEIGHT;
         RefPosition* recentAssignedRef       = nullptr;
-        RefPosition* recentAssignedRef2      = nullptr;
+
 #ifdef _TARGET_ARM_
+        RegRecord*   physRegRecord2     = nullptr;
+        RefPosition* recentAssignedRef2 = nullptr;
         if (current->registerType == TYP_DOUBLE)
         {
             recentAssignedRef           = (assignedInterval == nullptr) ? nullptr : assignedInterval->recentRefPosition;
@@ -3700,11 +3699,6 @@ regNumber LinearScan::assignCopyReg(RefPosition* refPosition)
     Interval* currentInterval = refPosition->getInterval();
     assert(currentInterval != nullptr);
     assert(currentInterval->isActive);
-
-    bool         foundFreeReg = false;
-    RegRecord*   bestPhysReg  = nullptr;
-    LsraLocation bestLocation = MinLocation;
-    regMaskTP    candidates   = refPosition->registerAssignment;
 
     // Save the relatedInterval, if any, so that it doesn't get modified during allocation.
     Interval* savedRelatedInterval   = currentInterval->relatedInterval;
@@ -4171,9 +4165,11 @@ void LinearScan::unassignPhysReg(RegRecord* regRec, RefPosition* spillRefPositio
         assert(regRec->assignedInterval == nullptr);
         return;
     }
-
+#if 0
     regNumber victimAssignedReg = assignedInterval->physReg;
-    assignedInterval->physReg   = REG_NA;
+#endif // 0
+
+    assignedInterval->physReg = REG_NA;
 
     bool spill = assignedInterval->isActive && nextRefPosition != nullptr;
     if (spill)
@@ -4612,10 +4608,9 @@ void LinearScan::processBlockStartLocations(BasicBlock* currentBlock, bool alloc
         return;
     }
 
-    unsigned    predBBNum         = blockInfo[currentBlock->bbNum].predBBNum;
-    VarToRegMap predVarToRegMap   = getOutVarToRegMap(predBBNum);
-    VarToRegMap inVarToRegMap     = getInVarToRegMap(currentBlock->bbNum);
-    bool        hasCriticalInEdge = blockInfo[currentBlock->bbNum].hasCriticalInEdge;
+    unsigned    predBBNum       = blockInfo[currentBlock->bbNum].predBBNum;
+    VarToRegMap predVarToRegMap = getOutVarToRegMap(predBBNum);
+    VarToRegMap inVarToRegMap   = getInVarToRegMap(currentBlock->bbNum);
 
     VarSetOps::AssignNoCopy(compiler, currentLiveVars,
                             VarSetOps::Intersection(compiler, registerCandidateVars, currentBlock->bbLiveIn));
@@ -4865,7 +4860,6 @@ void LinearScan::processBlockEndLocations(BasicBlock* currentBlock)
         VarSetOps::Assign(compiler, currentLiveVars, registerCandidateVars);
     }
 #endif // DEBUG
-    regMaskTP       liveRegs = RBM_NONE;
     VarSetOps::Iter iter(compiler, currentLiveVars);
     unsigned        varIndex = 0;
     while (iter.NextElem(&varIndex))
@@ -5011,7 +5005,6 @@ void LinearScan::allocateRegisters()
     }
 
 #ifdef DEBUG
-    regNumber lastAllocatedReg = REG_NA;
     if (VERBOSE)
     {
         dumpRefPositions("BEFORE ALLOCATION");
@@ -5060,7 +5053,6 @@ void LinearScan::allocateRegisters()
 
         Interval*      currentInterval = nullptr;
         Referenceable* currentReferent = nullptr;
-        bool           isInternalRef   = false;
         RefType        refType         = currentRefPosition->refType;
 
         currentReferent = currentRefPosition->referent;
@@ -6566,9 +6558,6 @@ void LinearScan::resolveRegisters()
                (refPosIterator->refType != RefTypeParamDef && refPosIterator->refType != RefTypeZeroInit));
     }
 
-    BasicBlock* insertionBlock = compiler->fgFirstBB;
-    GenTree*    insertionPoint = LIR::AsRange(insertionBlock).FirstNonPhiNode();
-
     // write back assignments
     for (block = startBlockSequence(); block != nullptr; block = moveToNextBlock())
     {
@@ -6871,7 +6860,6 @@ void LinearScan::resolveRegisters()
                     regNumber initialReg     = (initialRegMask == RBM_NONE || interval->firstRefPosition->spillAfter)
                                                ? REG_STK
                                                : genRegNumFromMask(initialRegMask);
-                    regNumber sourceReg = (varDsc->lvIsRegArg) ? varDsc->lvArgReg : REG_STK;
 
 #ifdef _TARGET_ARM_
                     if (varTypeIsMultiReg(varDsc))
@@ -7396,16 +7384,12 @@ void LinearScan::handleOutgoingCriticalEdges(BasicBlock* block)
         return;
     }
     VARSET_TP sameResolutionSet(VarSetOps::MakeEmpty(compiler));
-    VARSET_TP sameLivePathsSet(VarSetOps::MakeEmpty(compiler));
-    VARSET_TP singleTargetSet(VarSetOps::MakeEmpty(compiler));
     VARSET_TP diffResolutionSet(VarSetOps::MakeEmpty(compiler));
 
     // Get the outVarToRegMap for this block
     VarToRegMap outVarToRegMap = getOutVarToRegMap(block->bbNum);
     unsigned    succCount      = block->NumSucc(compiler);
     assert(succCount > 1);
-    VarToRegMap firstSuccInVarToRegMap = nullptr;
-    BasicBlock* firstSucc              = nullptr;
 
     // First, determine the live regs at the end of this block so that we know what regs are
     // available to copy into.
@@ -7482,9 +7466,6 @@ void LinearScan::handleOutgoingCriticalEdges(BasicBlock* block)
     while (outResolutionSetIter.NextElem(&outResolutionSetVarIndex))
     {
         regNumber fromReg             = getVarReg(outVarToRegMap, outResolutionSetVarIndex);
-        bool      isMatch             = true;
-        bool      isSame              = false;
-        bool      maybeSingleTarget   = false;
         bool      maybeSameLivePaths  = false;
         bool      liveOnlyAtSplitEdge = true;
         regNumber sameToReg           = REG_NA;
@@ -7608,7 +7589,6 @@ void LinearScan::handleOutgoingCriticalEdges(BasicBlock* block)
 
             // Now collect the resolution set for just this edge, if any.
             // Check only the vars in diffResolutionSet that are live-in to this successor.
-            bool        needsResolution   = false;
             VarToRegMap succInVarToRegMap = getInVarToRegMap(succBlock->bbNum);
             VARSET_TP   edgeResolutionSet(VarSetOps::Intersection(compiler, diffResolutionSet, succBlock->bbLiveIn));
             VarSetOps::Iter iter(compiler, edgeResolutionSet);
@@ -7699,7 +7679,6 @@ void LinearScan::resolveEdges()
         }
 
         unsigned    succCount       = block->NumSucc(compiler);
-        flowList*   preds           = block->bbPreds;
         BasicBlock* uniquePredBlock = block->GetUniquePred(compiler);
 
         // First, if this block has a single predecessor,
@@ -7917,7 +7896,9 @@ void LinearScan::resolveEdge(BasicBlock*      fromBlock,
         (resolveType == ResolveSharedCritical) ? REG_NA : getTempRegForResolution(fromBlock, toBlock, TYP_INT);
 #endif // !_TARGET_XARCH_
     regNumber tempRegFlt = REG_NA;
-    regNumber tempRegDbl = REG_NA; // Used only for ARM
+#ifdef _TARGET_ARM_
+    regNumber tempRegDbl = REG_NA;
+#endif // _TARGET_ARM_
     if ((compiler->compFloatingPointUsed) && (resolveType != ResolveSharedCritical))
     {
 #ifdef _TARGET_ARM_
@@ -8754,8 +8735,6 @@ void LinearScan::lsraGetOperandString(GenTree*          tree,
             break;
         case LinearScan::LSRA_DUMP_POST:
         {
-            Compiler* compiler = JitTls::GetCompiler();
-
             if (!tree->gtHasReg())
             {
                 _snprintf_s(operandString, operandStringLength, operandStringLength, "STK%s", lastUseChar);
@@ -9059,11 +9038,8 @@ void LinearScan::TupleStyleDump(LsraTupleDumpMode mode)
         {
             GenTree* tree = node;
 
-            genTreeOps oper      = tree->OperGet();
-            int        produce   = tree->IsValue() ? ComputeOperandDstCount(tree) : 0;
-            int        consume   = ComputeAvailableSrcCount(tree);
-            regMaskTP  killMask  = RBM_NONE;
-            regMaskTP  fixedMask = RBM_NONE;
+            int produce = tree->IsValue() ? ComputeOperandDstCount(tree) : 0;
+            int consume = ComputeAvailableSrcCount(tree);
 
             lsraDispNode(tree, mode, produce != 0 && mode != LSRA_DUMP_REFPOS);
 
@@ -9460,8 +9436,7 @@ void LinearScan::dumpRegRecordHeader()
     regTableIndent = shortRefPositionDumpWidth + allocationInfoWidth;
 
     // BBnn printed left-justified in the NAME Typeld and allocationInfo space.
-    int bbDumpWidth = regColumnWidth + 1 + refTypeInfoWidth + allocationInfoWidth;
-    int bbNumWidth  = (int)log10((double)compiler->fgBBNumMax) + 1;
+    int bbNumWidth = (int)log10((double)compiler->fgBBNumMax) + 1;
     // In the unlikely event that BB numbers overflow the space, we'll simply omit the predBB
     int predBBNumDumpSpace = regTableIndent - locationAndRPNumWidth - bbNumWidth - 9; // 'BB' + ' PredBB'
     if (predBBNumDumpSpace < bbNumWidth)
