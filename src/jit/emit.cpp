@@ -5487,8 +5487,9 @@ void emitter::emitOutputDataSec(dataSecDsc* sec, BYTE* dst)
         {
             JITDUMP("  section %u, size %u, block relative addr\n", secNum++, dscSize);
 
-            unsigned  elemSize = 4;
-            size_t    numElems = dscSize / 4;
+            const unsigned elemSize = 4;
+
+            size_t    numElems = dscSize / elemSize;
             unsigned* uDst     = (unsigned*)dst;
             insGroup* labFirst = (insGroup*)emitCodeGetCookie(emitComp->fgFirstBB);
 
@@ -5779,7 +5780,6 @@ void emitter::emitRecordGCcall(BYTE* codePos, unsigned char callInstrSize)
     assert(!emitFullGCinfo);
 
     unsigned offs = emitCurCodeOffs(codePos);
-    unsigned regs = (emitThisGCrefRegs | emitThisByrefRegs) & ~RBM_INTRET;
     callDsc* call;
 
 #ifdef JIT32_GCENCODER
@@ -5787,6 +5787,7 @@ void emitter::emitRecordGCcall(BYTE* codePos, unsigned char callInstrSize)
     // "Bail if this is a totally boring call", but the GCInfoEncoder/Decoder interface
     // requires a definition for every call site, so we skip these "early outs" when we're
     // using the general encoder.
+    unsigned regs = (emitThisGCrefRegs | emitThisByrefRegs) & ~RBM_INTRET;
     if (regs == 0)
     {
 #if EMIT_TRACK_STACK_DEPTH
