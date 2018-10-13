@@ -61,7 +61,6 @@ enum IndentChars
 
 // clang-format off
 // Sets of strings for different dumping options            vert             bot             top             mid             dash       embedded    terminal    error
-static const char*  emptyIndents[IndentCharCount]   = {     " ",             " ",            " ",            " ",            " ",           "{",      "",        "?"  };
 static const char*  asciiIndents[IndentCharCount]   = {     "|",            "\\",            "/",            "+",            "-",           "{",      "*",       "?"  };
 static const char*  unicodeIndents[IndentCharCount] = { "\xe2\x94\x82", "\xe2\x94\x94", "\xe2\x94\x8c", "\xe2\x94\x9c", "\xe2\x94\x80",     "{", "\xe2\x96\x8c", "?"  };
 // clang-format on
@@ -7836,12 +7835,13 @@ GenTree* Compiler::gtGetThisArg(GenTreeCall* call)
 
         if (call->gtCallLateArgs)
         {
-            regNumber      thisReg         = REG_ARG_0;
             unsigned       argNum          = 0;
             fgArgTabEntry* thisArgTabEntry = gtArgEntryByArgNum(call, argNum);
             GenTree*       result          = thisArgTabEntry->node;
 
 #if !FEATURE_FIXED_OUT_ARGS
+            const regNumber thisReg = REG_ARG_0;
+
             GenTree* lateArgs = call->gtCallLateArgs;
             regList  list     = call->regArgList;
             int      index    = 0;
@@ -9143,9 +9143,7 @@ void Compiler::gtDispVN(GenTree* tree)
 
 void Compiler::gtDispNode(GenTree* tree, IndentStack* indentStack, __in __in_z __in_opt const char* msg, bool isLIR)
 {
-    bool printPointer = true; // always true..
-    bool printFlags   = true; // always true..
-    bool printCost    = true; // always true..
+    const bool printFlags = true;
 
     int msgLength = 25;
 
@@ -15986,8 +15984,7 @@ bool GenTree::IsFieldAddr(Compiler* comp, GenTree** pObj, GenTree** pStatic, Fie
             //
             // The CSE could be a pointer to a boxed struct
             //
-            GenTreeLclVarCommon* lclVar = AsLclVarCommon();
-            ValueNum             vn     = gtVNPair.GetLiberal();
+            ValueNum vn = gtVNPair.GetLiberal();
             if (vn != ValueNumStore::NoVN)
             {
                 // Is the ValueNum a MapSelect involving a SharedStatic helper?
