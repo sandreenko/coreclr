@@ -2017,8 +2017,6 @@ bool Compiler::fgRemoveUnreachableBlocks()
 
         if (block->bbFlags & BBF_DONT_REMOVE)
         {
-            bool bIsBBCallAlwaysPair = block->isBBCallAlwaysPair();
-
             /* Unmark the block as removed, */
             /* clear BBF_INTERNAL as well and set BBJ_IMPORTED */
 
@@ -2029,7 +2027,8 @@ bool Compiler::fgRemoveUnreachableBlocks()
 
 #if FEATURE_EH_FUNCLETS && defined(_TARGET_ARM_)
             // If this is a <BBJ_CALLFINALLY, BBJ_ALWAYS> pair, we have to clear BBF_FINALLY_TARGET flag on
-            // the target node (of BBJ_ALWAYS) since BBJ_CALLFINALLY node is getting converted to a BBJ_THROW.
+            // the target node (of BBJ_ALWAYS) snce BBJ_CALLFINALLY node is getting converted to a BBJ_THROW.
+            bool bIsBBCallAlwaysPair = block->isBBCallAlwaysPair();
             if (bIsBBCallAlwaysPair)
             {
                 noway_assert(block->bbNext->bbJumpKind == BBJ_ALWAYS);
@@ -3001,8 +3000,6 @@ void Compiler::fgRemoveCheapPred(BasicBlock* block, BasicBlock* blockPred)
 {
     assert(!fgComputePredsDone);
     assert(fgCheapPredsValid);
-
-    flowList* oldEdge = nullptr;
 
     assert(block != nullptr);
     assert(blockPred != nullptr);
@@ -8062,7 +8059,7 @@ GenTree* Compiler::fgCreateMonitorTree(unsigned lvaMonAcquired, unsigned lvaThis
             // if the return type is a value class.  Note that fgInsertCommFormTemp() in turn uses this class handle
             // if the type of op1 is TYP_STRUCT to perform lvaSetStruct() on the new temp that is created, which
             // in turn passes it to VM to know the size of value type.
-            GenTree* temp = fgInsertCommaFormTemp(&retNode->gtOp.gtOp1, info.compMethodInfo->args.retTypeClass);
+            fgInsertCommaFormTemp(&retNode->gtOp.gtOp1, info.compMethodInfo->args.retTypeClass);
 
             GenTree* lclVar = retNode->gtOp.gtOp1->gtOp.gtOp2;
 
@@ -14087,8 +14084,7 @@ bool Compiler::fgOptimizeSwitchBranches(BasicBlock* block)
     //
     if (block->NumSucc(this) == 1)
     {
-        // Use BBJ_ALWAYS for a switch with only a default clause, or with only one unique successor.
-        BasicBlock* uniqueSucc = jmpTab[0];
+// Use BBJ_ALWAYS for a switch with only a default clause, or with only one unique successor.
 
 #ifdef DEBUG
         if (verbose)
@@ -20825,8 +20821,6 @@ void Compiler::fgDebugCheckBBlist(bool checkBBNum /* = false */, bool checkBBRef
         return;
     }
 
-    DWORD startTickCount = GetTickCount();
-
 #if FEATURE_EH_FUNCLETS
     bool reachedFirstFunclet = false;
     if (fgFuncletsCreated)
@@ -21701,7 +21695,7 @@ class UniquenessCheckWalker
 {
 public:
     UniquenessCheckWalker(Compiler* comp)
-        : comp(comp), nodesVecTraits(comp->compGenTreeID, comp), uniqueNodes(BitVecOps::MakeEmpty(&nodesVecTraits))
+        : nodesVecTraits(comp->compGenTreeID, comp), uniqueNodes(BitVecOps::MakeEmpty(&nodesVecTraits))
     {
     }
 
@@ -21733,7 +21727,6 @@ public:
     }
 
 private:
-    Compiler*    comp;
     BitVecTraits nodesVecTraits;
     BitVec       uniqueNodes;
 };
@@ -24933,7 +24926,6 @@ void Compiler::fgDebugCheckTryFinallyExits()
 {
     unsigned  XTnum            = 0;
     EHblkDsc* HBtab            = compHndBBtab;
-    unsigned  cloneCount       = 0;
     bool      allTryExitsValid = true;
     for (; XTnum < compHndBBtabCount; XTnum++, HBtab++)
     {
@@ -25785,7 +25777,6 @@ private:
         GenTreeStmt* CreateFatCallStmt(GenTree* actualCallAddress, GenTree* hiddenArgument)
         {
             GenTreeStmt* fatStmt = compiler->gtCloneExpr(stmt)->AsStmt();
-            GenTree*     fatTree = fatStmt->gtStmtExpr;
             GenTreeCall* fatCall = GetCall(fatStmt);
             fatCall->gtCallAddr  = actualCallAddress;
             AddHiddenArgument(fatCall, hiddenArgument);
