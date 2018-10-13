@@ -5843,8 +5843,7 @@ void Compiler::impImportNewObjArray(CORINFO_RESOLVED_TOKEN* pResolvedToken, CORI
         // pass number of arguments to the helper
         args = gtNewListNode(gtNewIconNode(pCallInfo->sig.numArgs), args);
 
-        unsigned argFlags = 0;
-        args              = impPopList(pCallInfo->sig.numArgs, &pCallInfo->sig, args);
+        args = impPopList(pCallInfo->sig.numArgs, &pCallInfo->sig, args);
 
         node = gtNewHelperCallNode(CORINFO_HELP_NEW_MDARR, TYP_REF, args);
 
@@ -5907,8 +5906,8 @@ GenTree* Compiler::impTransformThis(GenTree*                thisPtr,
             obj = gtNewObjNode(pConstrainedResolvedToken->hClass, obj);
             obj->gtFlags |= GTF_EXCEPT;
 
-            CorInfoType jitTyp  = info.compCompHnd->asCorInfoType(pConstrainedResolvedToken->hClass);
-            var_types   objType = JITtype2varType(jitTyp);
+            CorInfoType jitTyp = info.compCompHnd->asCorInfoType(pConstrainedResolvedToken->hClass);
+
             if (impIsPrimitive(jitTyp))
             {
                 if (obj->OperIsBlk())
@@ -6910,7 +6909,6 @@ var_types Compiler::impImportCall(OPCODE                  opcode,
     CORINFO_CLASS_HANDLE   clsHnd                         = nullptr;
     unsigned               clsFlags                       = 0;
     unsigned               mflags                         = 0;
-    unsigned               argFlags                       = 0;
     GenTree*               call                           = nullptr;
     GenTreeArgList*        args                           = nullptr;
     CORINFO_THIS_TRANSFORM constraintCallThisTransform    = CORINFO_NO_THIS_TRANSFORM;
@@ -8066,7 +8064,6 @@ DONE:
             // True virtual or indirect calls, shouldn't pass in a callee handle.
             CORINFO_METHOD_HANDLE exactCalleeHnd =
                 ((call->gtCall.gtCallType != CT_USER_FUNC) || call->gtCall.IsVirtual()) ? nullptr : methHnd;
-            GenTree* thisArg = call->gtCall.gtCallObjp;
 
             if (info.compCompHnd->canTailCall(info.compMethodHnd, methHnd, exactCalleeHnd, explicitTailCall))
             {
@@ -8355,7 +8352,7 @@ bool Compiler::impMethodInfo_hasRetBuffArg(CORINFO_METHOD_INFO* methInfo)
 
         structPassingKind howToReturnStruct = SPK_Unknown;
 
-        var_types returnType = getReturnTypeForStruct(methInfo->args.retTypeClass, &howToReturnStruct);
+        getReturnTypeForStruct(methInfo->args.retTypeClass, &howToReturnStruct);
 
         if (howToReturnStruct == SPK_ByReference)
         {
@@ -8408,7 +8405,6 @@ var_types Compiler::impImportJitTestLabelMark(int numArgs)
         // a GT_IND of a static field address, which should be the sum of a (hoistable) helper call and possibly some
         // offset within the the static field block whose address is returned by the helper call.
         // The annotation is saying that this address calculation, but not the entire access, should be hoisted.
-        GenTree* helperCall = nullptr;
         assert(node->OperGet() == GT_IND);
         tlAndN.m_num -= 100;
         GetNodeTestData()->Set(node->gtOp.gtOp1, tlAndN);
@@ -9661,12 +9657,6 @@ enum controlFlow_t
     META,
 };
 
-const static controlFlow_t controlFlow[] = {
-#define OPDEF(c, s, pop, push, args, type, l, s1, s2, flow) flow,
-#include "opcode.def"
-#undef OPDEF
-};
-
 #endif // DEBUG
 
 /*****************************************************************************
@@ -9846,7 +9836,6 @@ GenTree* Compiler::impOptimizeCastClassOrIsInst(GenTree* op1, CORINFO_RESOLVED_T
     bool                 isExact   = false;
     bool                 isNonNull = false;
     CORINFO_CLASS_HANDLE fromClass = gtGetClassHandle(op1, &isExact, &isNonNull);
-    GenTree*             optResult = nullptr;
 
     if (fromClass != nullptr)
     {

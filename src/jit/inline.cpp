@@ -1419,8 +1419,7 @@ void InlineStrategy::DumpDataContents(FILE* file)
     DumpDataEnsurePolicyIsSet();
 
     // Cache references to compiler substructures.
-    const Compiler::Info&    info = m_Compiler->info;
-    const Compiler::Options& opts = m_Compiler->opts;
+    const Compiler::Info& info = m_Compiler->info;
 
     // We'd really like the method identifier to be unique and
     // durable across crossgen invocations. Not clear how to
@@ -1512,9 +1511,6 @@ void InlineStrategy::DumpXml(FILE* file, unsigned indent)
     const Compiler::Info&    info = m_Compiler->info;
     const Compiler::Options& opts = m_Compiler->opts;
 
-    const bool isPrejitRoot  = opts.jitFlags->IsSet(JitFlags::JIT_FLAG_PREJIT);
-    const bool isForceInline = (info.compFlags & CORINFO_FLG_FORCEINLINE) != 0;
-
     // We'd really like the method identifier to be unique and
     // durable across crossgen invocations. Not clear how to
     // accomplish this, so we'll use the token for now.
@@ -1577,6 +1573,7 @@ void InlineStrategy::DumpXml(FILE* file, unsigned indent)
     fprintf(file, "%*s<TimeEstimate>%u</TimeEstimate>\n", indent + 2, "", m_CurrentTimeEstimate);
 
     // For prejit roots also propagate out the assessment of the root method
+    const bool isPrejitRoot = opts.jitFlags->IsSet(JitFlags::JIT_FLAG_PREJIT);
     if (isPrejitRoot)
     {
         fprintf(file, "%*s<PrejitDecision>%s</PrejitDecision>\n", indent + 2, "",
