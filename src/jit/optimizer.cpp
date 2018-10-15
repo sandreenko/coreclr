@@ -7906,9 +7906,8 @@ void Compiler::AddModifiedElemTypeAllContainingLoops(unsigned lnum, CORINFO_CLAS
 /* static */
 Compiler::fgWalkResult Compiler::optRemoveTreeVisitor(GenTree** pTree, fgWalkData* data)
 {
-    GenTree*  tree     = *pTree;
-    Compiler* comp     = data->compiler;
-    GenTree*  keepList = (GenTree*)(data->pCallbackData);
+    GenTree* tree     = *pTree;
+    GenTree* keepList = (GenTree*)(data->pCallbackData);
 
     // We may have a non-NULL side effect list that is being kept
     //
@@ -7982,8 +7981,6 @@ void Compiler::optRemoveRangeCheck(GenTree* tree, GenTree* stmt)
     GenTree* bndsChkTree = tree->gtOp.gtOp1;
 
     noway_assert(bndsChkTree->OperIsBoundsCheck());
-
-    GenTreeBoundsChk* bndsChk = tree->gtOp.gtOp1->AsBoundsChk();
 
 #ifdef DEBUG
     if (verbose)
