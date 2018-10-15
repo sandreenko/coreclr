@@ -2326,9 +2326,8 @@ void fgArgInfo::EvalArgsToTemps()
                 {
                     setupArg = compiler->gtNewTempAssign(tmpVarNum, argx);
 
-                    LclVarDsc* varDsc     = compiler->lvaTable + tmpVarNum;
-                    var_types  lclVarType = genActualType(argx->gtType);
-                    var_types  scalarType = TYP_UNKNOWN;
+                    var_types lclVarType = genActualType(argx->gtType);
+                    var_types scalarType = TYP_UNKNOWN;
 
                     if (setupArg->OperIsCopyBlkOp())
                     {
@@ -2337,6 +2336,7 @@ void fgArgInfo::EvalArgsToTemps()
                         // This scalar LclVar widening step is only performed for ARM architectures.
                         //
                         CORINFO_CLASS_HANDLE clsHnd     = compiler->lvaGetStruct(tmpVarNum);
+                        LclVarDsc*           varDsc     = compiler->lvaTable + tmpVarNum;
                         unsigned             structSize = varDsc->lvExactSize;
 
                         scalarType = compiler->getPrimitiveTypeForStruct(structSize, clsHnd, curArgTabEntry->isVararg);
@@ -2713,7 +2713,6 @@ GenTreeCall* Compiler::fgMorphArgs(GenTreeCall* call)
     unsigned argSlots                = 0;
     unsigned nonRegPassedStructSlots = 0;
     bool     reMorphing              = call->AreArgsComplete();
-    bool     callHasRetBuffArg       = call->HasRetBufArg();
     bool     callIsVararg            = call->IsVarargs();
 
     JITDUMP("%sMorphing args for %d.%s:\n", (reMorphing) ? "Re" : "", call->gtTreeID, GenTree::OpName(call->gtOper));
@@ -4423,10 +4422,8 @@ GenTreeCall* Compiler::fgMorphArgs(GenTreeCall* call)
 //
 void Compiler::fgMorphMultiregStructArgs(GenTreeCall* call)
 {
-    bool       foundStructArg = false;
-    unsigned   initialFlags   = call->gtFlags;
-    unsigned   flagsSummary   = 0;
-    fgArgInfo* allArgInfo     = call->fgArgInfo;
+    bool     foundStructArg = false;
+    unsigned flagsSummary   = 0;
 
 #ifdef _TARGET_X86_
     assert(!"Logic error: no MultiregStructArgs for X86");
@@ -5613,8 +5610,7 @@ BasicBlock* Compiler::fgSetRngChkTargetInner(SpecialCodeKind kind, bool delay)
  *  and label the constants and variables that occur in the tree.
  */
 
-const int MAX_ARR_COMPLEXITY   = 4;
-const int MAX_INDEX_COMPLEXITY = 4;
+const int MAX_ARR_COMPLEXITY = 4;
 
 GenTree* Compiler::fgMorphArrayIndex(GenTree* tree)
 {
@@ -7087,9 +7083,6 @@ bool Compiler::fgCanFastTailCall(GenTreeCall* callee)
     //
     // Note that callee being a vararg method is not a problem since we can account the params being passed.
     unsigned nCallerArgs = info.compArgsCount;
-
-    size_t callerArgRegCount      = codeGen->intRegState.rsCalleeRegArgCount;
-    size_t callerFloatArgRegCount = codeGen->floatRegState.rsCalleeRegArgCount;
 
     // Count the callee args including implicit and hidden.
     // Note that GenericContext and VarargCookie are added by importer while
@@ -9713,9 +9706,9 @@ GenTree* Compiler::fgMorphGetStructAddr(GenTree** pTree, CORINFO_CLASS_HANDLE cl
             default:
             {
                 // TODO: Consider using lvaGrabTemp and gtNewTempAssign instead, since we're
-                // not going to use "temp"
-                GenTree* temp = fgInsertCommaFormTemp(pTree, clsHnd);
-                addr          = fgMorphGetStructAddr(pTree, clsHnd, isRValue);
+                // not going to use the result of `fgInsertCommaFormTemp`.
+                fgInsertCommaFormTemp(pTree, clsHnd);
+                addr = fgMorphGetStructAddr(pTree, clsHnd, isRValue);
                 break;
             }
         }
@@ -10027,8 +10020,7 @@ void Compiler::fgMorphUnsafeBlk(GenTreeObj* dest)
     assert(dest->gtGcPtrCount != 0);
     unsigned blockWidth = dest->AsBlk()->gtBlkSize;
 #ifdef DEBUG
-    bool     destOnStack = false;
-    GenTree* destAddr    = dest->Addr();
+    GenTree* destAddr = dest->Addr();
     assert(destAddr->IsLocalAddrExpr() != nullptr);
 #endif
     if ((blockWidth >= (2 * TARGET_POINTER_SIZE)) && (blockWidth <= CPBLK_UNROLL_LIMIT))
@@ -12453,8 +12445,6 @@ DONE_MORPHING_CHILDREN:
                     {
                         goto SKIP;
                     }
-
-                    LclVarDsc* varDsc = lvaTable + lclNum;
 
                     /* Set op1 to the right side of asg, (i.e. the RELOP) */
                     op1 = asg->gtOp.gtOp2;
