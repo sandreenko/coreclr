@@ -517,8 +517,8 @@ GenTree* Compiler::getArgForHWIntrinsic(var_types argType, CORINFO_CLASS_HANDLE 
     if (argType == TYP_STRUCT)
     {
         unsigned int argSizeBytes;
-        var_types    base = getBaseTypeAndSizeOfSIMDType(argClass, &argSizeBytes);
-        argType           = getSIMDTypeForSize(argSizeBytes);
+        getBaseTypeAndSizeOfSIMDType(argClass, &argSizeBytes);
+        argType = getSIMDTypeForSize(argSizeBytes);
         assert((argType == TYP_SIMD32) || (argType == TYP_SIMD16));
         arg = impSIMDPopStack(argType);
         assert((arg->TypeGet() == TYP_SIMD16) || (arg->TypeGet() == TYP_SIMD32));
@@ -947,9 +947,6 @@ GenTree* Compiler::impSSEIntrinsic(NamedIntrinsic        intrinsic,
 {
     GenTree* retNode  = nullptr;
     GenTree* op1      = nullptr;
-    GenTree* op2      = nullptr;
-    GenTree* op3      = nullptr;
-    GenTree* op4      = nullptr;
     int      simdSize = HWIntrinsicInfo::lookupSimdSize(this, intrinsic, sig);
 
     // The Prefetch and StoreFence intrinsics don't take any SIMD operands
@@ -1011,16 +1008,12 @@ GenTree* Compiler::impSSE2Intrinsic(NamedIntrinsic        intrinsic,
     GenTree*  retNode  = nullptr;
     GenTree*  op1      = nullptr;
     GenTree*  op2      = nullptr;
-    int       ival     = -1;
     int       simdSize = HWIntrinsicInfo::lookupSimdSize(this, intrinsic, sig);
     var_types baseType = TYP_UNKNOWN;
     var_types retType  = TYP_UNKNOWN;
 
     // The  fencing intrinsics don't take any operands and simdSize is 0
     assert((simdSize == 16) || (simdSize == 0));
-
-    CORINFO_ARG_LIST_HANDLE argList = sig->args;
-    var_types               argType = TYP_UNKNOWN;
 
     switch (intrinsic)
     {
