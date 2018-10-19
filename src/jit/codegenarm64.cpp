@@ -1532,6 +1532,8 @@ void CodeGen::genCodeForMulHi(GenTreeOp* treeNode)
 
         regNumber r = emit->emitInsTernary(ins, EA_4BYTE, treeNode, op1, op2);
 
+        assert(r == targetReg);
+
         emit->emitIns_R_R_I(isUnsigned ? INS_lsr : INS_asr, EA_8BYTE, targetReg, targetReg, 32);
     }
 
@@ -1841,7 +1843,6 @@ void CodeGen::genLclHeap(GenTree* tree)
     var_types   type            = genActualType(size->gtType);
     emitAttr    easz            = emitTypeSize(type);
     BasicBlock* endLabel        = nullptr;
-    BasicBlock* loop            = nullptr;
     unsigned    stackAdjustment = 0;
 
 #ifdef DEBUG
@@ -3071,8 +3072,6 @@ void CodeGen::genCodeForStoreInd(GenTreeStoreInd* tree)
     }
     else // A normal store, not a WriteBarrier store
     {
-        bool     dataIsUnary = false;
-        GenTree* nonRMWsrc   = nullptr;
         // We must consume the operands in the proper execution order,
         // so that liveness is updated appropriately.
         genConsumeAddress(addr);
@@ -4063,7 +4062,6 @@ void CodeGen::genSIMDIntrinsicInit(GenTreeSIMD* simdNode)
     var_types baseType  = simdNode->gtSIMDBaseType;
     regNumber targetReg = simdNode->gtRegNum;
     assert(targetReg != REG_NA);
-    var_types targetType = simdNode->TypeGet();
 
     genConsumeOperands(simdNode);
     regNumber op1Reg = op1->IsIntegralConst(0) ? REG_ZR : op1->gtRegNum;
@@ -4108,8 +4106,6 @@ void CodeGen::genSIMDIntrinsicInitN(GenTreeSIMD* simdNode)
 
     regNumber targetReg = simdNode->gtRegNum;
     assert(targetReg != REG_NA);
-
-    var_types targetType = simdNode->TypeGet();
 
     var_types baseType = simdNode->gtSIMDBaseType;
 
@@ -4192,7 +4188,6 @@ void CodeGen::genSIMDIntrinsicUnOp(GenTreeSIMD* simdNode)
     var_types baseType  = simdNode->gtSIMDBaseType;
     regNumber targetReg = simdNode->gtRegNum;
     assert(targetReg != REG_NA);
-    var_types targetType = simdNode->TypeGet();
 
     genConsumeOperands(simdNode);
     regNumber op1Reg = op1->gtRegNum;
@@ -4227,12 +4222,9 @@ void CodeGen::genSIMDIntrinsicWiden(GenTreeSIMD* simdNode)
     var_types baseType  = simdNode->gtSIMDBaseType;
     regNumber targetReg = simdNode->gtRegNum;
     assert(targetReg != REG_NA);
-    var_types simdType = simdNode->TypeGet();
 
     genConsumeOperands(simdNode);
-    regNumber op1Reg   = op1->gtRegNum;
-    regNumber srcReg   = op1Reg;
-    emitAttr  emitSize = emitActualTypeSize(simdType);
+    regNumber op1Reg = op1->gtRegNum;
 
     instruction ins = getOpForSIMDIntrinsic(simdNode->gtSIMDIntrinsicID, baseType);
 
@@ -4270,8 +4262,6 @@ void CodeGen::genSIMDIntrinsicNarrow(GenTreeSIMD* simdNode)
     var_types baseType  = simdNode->gtSIMDBaseType;
     regNumber targetReg = simdNode->gtRegNum;
     assert(targetReg != REG_NA);
-    var_types simdType = simdNode->TypeGet();
-    emitAttr  emitSize = emitTypeSize(simdType);
 
     genConsumeOperands(simdNode);
     regNumber op1Reg = op1->gtRegNum;
@@ -4356,7 +4346,6 @@ void CodeGen::genSIMDIntrinsicBinOp(GenTreeSIMD* simdNode)
     var_types baseType  = simdNode->gtSIMDBaseType;
     regNumber targetReg = simdNode->gtRegNum;
     assert(targetReg != REG_NA);
-    var_types targetType = simdNode->TypeGet();
 
     genConsumeOperands(simdNode);
     regNumber op1Reg = op1->gtRegNum;
@@ -4392,16 +4381,14 @@ void CodeGen::genSIMDIntrinsicRelOp(GenTreeSIMD* simdNode)
     assert(simdNode->gtSIMDIntrinsicID == SIMDIntrinsicOpEquality ||
            simdNode->gtSIMDIntrinsicID == SIMDIntrinsicOpInEquality);
 
-    GenTree*  op1        = simdNode->gtGetOp1();
-    GenTree*  op2        = simdNode->gtGetOp2();
-    var_types baseType   = simdNode->gtSIMDBaseType;
-    regNumber targetReg  = simdNode->gtRegNum;
-    var_types targetType = simdNode->TypeGet();
+    GenTree*  op1       = simdNode->gtGetOp1();
+    GenTree*  op2       = simdNode->gtGetOp2();
+    var_types baseType  = simdNode->gtSIMDBaseType;
+    regNumber targetReg = simdNode->gtRegNum;
 
     genConsumeOperands(simdNode);
-    regNumber op1Reg   = op1->gtRegNum;
-    regNumber op2Reg   = op2->gtRegNum;
-    regNumber otherReg = op2Reg;
+    regNumber op1Reg = op1->gtRegNum;
+    regNumber op2Reg = op2->gtRegNum;
 
     instruction ins  = getOpForSIMDIntrinsic(SIMDIntrinsicEqual, baseType);
     emitAttr    attr = (simdNode->gtSIMDSize > 8) ? EA_16BYTE : EA_8BYTE;
@@ -4452,7 +4439,6 @@ void CodeGen::genSIMDIntrinsicDotProduct(GenTreeSIMD* simdNode)
     GenTree*  op1      = simdNode->gtGetOp1();
     GenTree*  op2      = simdNode->gtGetOp2();
     var_types baseType = simdNode->gtSIMDBaseType;
-    var_types simdType = op1->TypeGet();
 
     regNumber targetReg = simdNode->gtRegNum;
     assert(targetReg != REG_NA);
@@ -4824,7 +4810,6 @@ void CodeGen::genSIMDIntrinsicUpperRestore(GenTreeSIMD* simdNode)
     assert(emitTypeSize(op1->TypeGet()) == 16);
     regNumber srcReg    = simdNode->gtRegNum;
     regNumber lclVarReg = genConsumeReg(op1);
-    unsigned  varNum    = op1->AsLclVarCommon()->gtLclNum;
     assert(lclVarReg != REG_NA);
     assert(srcReg != REG_NA);
     if (simdNode->gtFlags & GTF_SPILLED)
@@ -4902,7 +4887,7 @@ void CodeGen::genLoadIndTypeSIMD12(GenTree* treeNode)
 
     assert(!addr->isContained());
 
-    regNumber operandReg = genConsumeReg(addr);
+    genConsumeReg(addr);
 
     // Need an addtional int register to read upper 4 bytes, which is different from targetReg
     regNumber tmpReg = treeNode->GetSingleTempReg();
@@ -5056,7 +5041,6 @@ void CodeGen::genHWIntrinsicUnaryOp(GenTreeHWIntrinsic* node)
     emitAttr  attr      = emitActualTypeSize(op1->TypeGet());
 
     assert(targetReg != REG_NA);
-    var_types targetType = node->TypeGet();
 
     genConsumeOperands(node);
 
@@ -5110,7 +5094,6 @@ void CodeGen::genHWIntrinsicSimdBinaryOp(GenTreeHWIntrinsic* node)
     regNumber targetReg = node->gtRegNum;
 
     assert(targetReg != REG_NA);
-    var_types targetType = node->TypeGet();
 
     genConsumeOperands(node);
 
@@ -5451,11 +5434,9 @@ void CodeGen::genHWIntrinsicSimdSelectOp(GenTreeHWIntrinsic* node)
     GenTree*        op1       = argList->Current();
     GenTree*        op2       = argList->Rest()->Current();
     GenTree*        op3       = argList->Rest()->Rest()->Current();
-    var_types       baseType  = node->gtSIMDBaseType;
     regNumber       targetReg = node->gtRegNum;
 
     assert(targetReg != REG_NA);
-    var_types targetType = node->TypeGet();
 
     genConsumeRegs(op1);
     genConsumeRegs(op2);
@@ -5521,7 +5502,6 @@ void CodeGen::genHWIntrinsicSimdSetAllOp(GenTreeHWIntrinsic* node)
     regNumber targetReg = node->gtRegNum;
 
     assert(targetReg != REG_NA);
-    var_types targetType = node->TypeGet();
 
     genConsumeOperands(node);
 
@@ -5568,7 +5548,6 @@ void CodeGen::genHWIntrinsicSimdUnaryOp(GenTreeHWIntrinsic* node)
     regNumber targetReg = node->gtRegNum;
 
     assert(targetReg != REG_NA);
-    var_types targetType = node->TypeGet();
 
     genConsumeOperands(node);
 
@@ -5655,7 +5634,6 @@ void CodeGen::genHWIntrinsicSimdTernaryRMWOp(GenTreeHWIntrinsic* node)
     regNumber       targetReg = node->gtRegNum;
 
     assert(targetReg != REG_NA);
-    var_types targetType = node->TypeGet();
 
     genConsumeRegs(op1);
     genConsumeRegs(op2);
@@ -5712,7 +5690,6 @@ void CodeGen::genHWIntrinsicShaHashOp(GenTreeHWIntrinsic* node)
     regNumber       targetReg = node->gtRegNum;
 
     assert(targetReg != REG_NA);
-    var_types targetType = node->TypeGet();
 
     genConsumeRegs(op1);
     genConsumeRegs(op2);
@@ -5767,7 +5744,6 @@ void CodeGen::genHWIntrinsicShaRotateOp(GenTreeHWIntrinsic* node)
     emitAttr  attr      = emitActualTypeSize(node);
 
     assert(targetReg != REG_NA);
-    var_types targetType = node->TypeGet();
 
     genConsumeOperands(node);
 
@@ -5811,7 +5787,9 @@ void CodeGen::genArm64EmitterUnitTests()
     // Mark the "fake" instructions in the output.
     printf("*************** In genArm64EmitterUnitTests()\n");
 
+#ifdef ALL_ARM64_EMITTER_UNIT_TESTS
     emitter* theEmitter = getEmitter();
+#endif // ALL_ARM64_EMITTER_UNIT_TESTS
 
 #ifdef ALL_ARM64_EMITTER_UNIT_TESTS
     // We use this:
