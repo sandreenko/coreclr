@@ -41,7 +41,6 @@ void CodeGen::genCodeForTreeNode(GenTree* treeNode)
     lastConsumedNode = nullptr;
     if (compiler->verbose)
     {
-        unsigned seqNum = treeNode->gtSeqNum; // Useful for setting a conditional break in Visual Studio
         compiler->gtDispLIRNode(treeNode, "Generating: ");
     }
 #endif // DEBUG
@@ -1313,10 +1312,8 @@ void CodeGen::genRangeCheck(GenTree* oper)
 
     GenTreeBoundsChk* bndsChk = oper->AsBoundsChk();
 
-    GenTree* arrLen    = bndsChk->gtArrLen;
-    GenTree* arrIndex  = bndsChk->gtIndex;
-    GenTree* arrRef    = NULL;
-    int      lenOffset = 0;
+    GenTree* arrLen   = bndsChk->gtArrLen;
+    GenTree* arrIndex = bndsChk->gtIndex;
 
     GenTree*     src1;
     GenTree*     src2;
@@ -1859,8 +1856,6 @@ void CodeGen::genCodeForCpBlkUnroll(GenTreeBlk* cpBlkNode)
     GenTree* srcAddr = nullptr;
 
     assert((size != 0) && (size <= CPBLK_UNROLL_LIMIT));
-
-    emitter* emit = getEmitter();
 
     if (dstAddr->isUsedFromReg())
     {
