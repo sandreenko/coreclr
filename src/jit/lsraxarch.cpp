@@ -46,7 +46,6 @@ XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 int LinearScan::BuildNode(GenTree* tree)
 {
     assert(!tree->isContained());
-    Interval* prefSrcInterval = nullptr;
     int       srcCount;
     int       dstCount      = 0;
     regMaskTP dstCandidates = RBM_NONE;
@@ -1067,7 +1066,6 @@ int LinearScan::BuildCall(GenTreeCall* call)
     // there is an explicit thisPtr but it is redundant
 
     bool callHasFloatRegArgs = false;
-    bool isVarArgs           = call->IsVarargs();
 
     // First, determine internal registers.
     // We will need one for any float arguments to a varArgs call.
@@ -1497,11 +1495,8 @@ int LinearScan::BuildPutArgStk(GenTreePutArgStk* putArgStk)
             {
                 // We can treat as a slot any field that is stored at a slot boundary, where the previous
                 // field is not in the same slot. (Note that we store the fields in reverse order.)
-                const bool fieldIsSlot = ((fieldOffset % 4) == 0) && ((prevOffset - fieldOffset) >= 4);
-                if (intTemp == nullptr)
-                {
-                    intTemp = buildInternalIntRegisterDefForNode(putArgStk);
-                }
+                const bool   fieldIsSlot = ((fieldOffset % 4) == 0) && ((prevOffset - fieldOffset) >= 4);
+                RefPosition* intTemp     = buildInternalIntRegisterDefForNode(putArgStk);
                 if (!fieldIsSlot && varTypeIsByte(fieldType))
                 {
                     // If this field is a slot--i.e. it is an integer field that is 4-byte aligned and takes up 4 bytes
@@ -1553,9 +1548,6 @@ int LinearScan::BuildPutArgStk(GenTreePutArgStk* putArgStk)
     {
         return BuildSimple(putArgStk);
     }
-
-    GenTree* dst     = putArgStk;
-    GenTree* srcAddr = nullptr;
 
     // If we have a buffer between XMM_REGSIZE_BYTES and CPBLK_UNROLL_LIMIT bytes, we'll use SSE2.
     // Structs and buffer with sizes <= CPBLK_UNROLL_LIMIT bytes are occurring in more than 95% of
@@ -1712,11 +1704,10 @@ int LinearScan::BuildLclHeap(GenTree* tree)
 //
 int LinearScan::BuildModDiv(GenTree* tree)
 {
-    GenTree*     op1           = tree->gtGetOp1();
-    GenTree*     op2           = tree->gtGetOp2();
-    regMaskTP    dstCandidates = RBM_NONE;
-    RefPosition* internalDef   = nullptr;
-    int          srcCount      = 0;
+    GenTree*  op1           = tree->gtGetOp1();
+    GenTree*  op2           = tree->gtGetOp2();
+    regMaskTP dstCandidates = RBM_NONE;
+    int       srcCount      = 0;
 
     if (varTypeIsFloating(tree->TypeGet()))
     {
@@ -2713,8 +2704,7 @@ int LinearScan::BuildIndir(GenTreeIndir* indirTree)
             // Because 'source' is contained, we haven't yet determined its special register requirements, if any.
             // As it happens, the Shift or Rotate cases are the only ones with special requirements.
             assert(source->isContained() && source->OperIsRMWMemOp());
-            GenTree*      nonMemSource = nullptr;
-            GenTreeIndir* otherIndir   = nullptr;
+            GenTreeIndir* otherIndir = nullptr;
 
             if (source->OperIsShiftOrRotate())
             {
