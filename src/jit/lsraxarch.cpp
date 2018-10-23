@@ -311,8 +311,8 @@ int LinearScan::BuildNode(GenTree* tree)
         case GT_RETURNTRAP:
         {
             // This just turns into a compare of its child with an int + a conditional call.
-            RefPosition* internalDef = buildInternalIntRegisterDefForNode(tree);
-            srcCount                 = BuildOperandUses(tree->gtGetOp1());
+            buildInternalIntRegisterDefForNode(tree);
+            srcCount = BuildOperandUses(tree->gtGetOp1());
             buildInternalRegisterUses();
             killMask = compiler->compHelperCallKillSet(CORINFO_HELP_STOP_FOR_GC);
             BuildDefsWithKills(tree, 0, RBM_NONE, killMask);
@@ -386,8 +386,8 @@ int LinearScan::BuildNode(GenTree* tree)
             if (varTypeIsFloating(tree))
             {
 
-                RefPosition* internalDef = buildInternalFloatRegisterDefForNode(tree, internalFloatRegCandidates());
-                srcCount                 = BuildOperandUses(tree->gtGetOp1());
+                buildInternalFloatRegisterDefForNode(tree, internalFloatRegCandidates());
+                srcCount = BuildOperandUses(tree->gtGetOp1());
                 buildInternalRegisterUses();
             }
             else
@@ -429,8 +429,8 @@ int LinearScan::BuildNode(GenTree* tree)
         case GT_CKFINITE:
         {
             assert(dstCount == 1);
-            RefPosition* internalDef = buildInternalIntRegisterDefForNode(tree);
-            srcCount                 = BuildOperandUses(tree->gtGetOp1());
+            buildInternalIntRegisterDefForNode(tree);
+            srcCount = BuildOperandUses(tree->gtGetOp1());
             buildInternalRegisterUses();
             BuildDef(tree);
         }
@@ -1466,7 +1466,6 @@ int LinearScan::BuildPutArgStk(GenTreePutArgStk* putArgStk)
         assert(putArgStk->gtOp1->isContained());
 
         RefPosition* simdTemp   = nullptr;
-        RefPosition* intTemp    = nullptr;
         unsigned     prevOffset = putArgStk->getArgSize();
         // We need to iterate over the fields twice; once to determine the need for internal temps,
         // and once to actually build the uses.

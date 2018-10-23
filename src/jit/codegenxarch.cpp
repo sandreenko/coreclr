@@ -1499,7 +1499,6 @@ void CodeGen::genCodeForTreeNode(GenTree* treeNode)
     lastConsumedNode = nullptr;
     if (compiler->verbose)
     {
-        unsigned seqNum = treeNode->gtSeqNum; // Useful for setting a conditional break in Visual Studio
         compiler->gtDispLIRNode(treeNode, "Generating: ");
     }
 #endif // DEBUG
@@ -2791,8 +2790,6 @@ void CodeGen::genCodeForCpBlkUnroll(GenTreeBlk* cpBlkNode)
     GenTree* srcAddr = nullptr;
     assert(size <= CPBLK_UNROLL_LIMIT);
 
-    emitter* emit = getEmitter();
-
     if (dstAddr->isUsedFromReg())
     {
         genConsumeReg(dstAddr);
@@ -2899,8 +2896,6 @@ void CodeGen::genCodeForCpBlkRepMovs(GenTreeBlk* cpBlkNode)
     unsigned size    = cpBlkNode->Size();
     GenTree* dstAddr = cpBlkNode->Addr();
     GenTree* source  = cpBlkNode->Data();
-    GenTree* srcAddr = nullptr;
-
 #ifdef DEBUG
     assert(dstAddr->isUsedFromReg());
     assert(source->isContained());
@@ -3072,9 +3067,6 @@ void CodeGen::genStructPutArgUnroll(GenTreePutArgStk* putArgNode)
     unsigned size = putArgNode->getArgSize();
     assert(size <= CPBLK_UNROLL_LIMIT);
 
-    emitter* emit         = getEmitter();
-    unsigned putArgOffset = putArgNode->getArgOffset();
-
     assert(src->isContained());
 
     assert(src->gtOper == GT_OBJ);
@@ -3214,8 +3206,6 @@ void CodeGen::genClearStackVec3ArgUpperBits()
 #endif
 
     assert(compiler->compGeneratingProlog);
-
-    unsigned varNum = 0;
 
     for (unsigned varNum = 0; varNum < compiler->info.compArgsCount; varNum++)
     {
@@ -3417,7 +3407,6 @@ void CodeGen::genCodeForCpBlk(GenTreeBlk* cpBlkNode)
 #ifdef _TARGET_AMD64_
     // Make sure we got the arguments of the cpblk operation in the right registers
     unsigned blockSize = cpBlkNode->Size();
-    GenTree* dstAddr   = cpBlkNode->Addr();
     GenTree* source    = cpBlkNode->Data();
     GenTree* srcAddr   = nullptr;
 
@@ -3636,10 +3625,8 @@ void CodeGen::genRangeCheck(GenTree* oper)
     noway_assert(oper->OperIsBoundsCheck());
     GenTreeBoundsChk* bndsChk = oper->AsBoundsChk();
 
-    GenTree* arrIndex  = bndsChk->gtIndex;
-    GenTree* arrLen    = bndsChk->gtArrLen;
-    GenTree* arrRef    = nullptr;
-    int      lenOffset = 0;
+    GenTree* arrIndex = bndsChk->gtIndex;
+    GenTree* arrLen   = bndsChk->gtArrLen;
 
     GenTree *    src1, *src2;
     emitJumpKind jmpKind;
@@ -4123,7 +4110,6 @@ void CodeGen::genCodeForShiftLong(GenTree* tree)
 void CodeGen::genCodeForShiftRMW(GenTreeStoreInd* storeInd)
 {
     GenTree* data = storeInd->Data();
-    GenTree* addr = storeInd->Addr();
 
     assert(data->OperIsShift() || data->OperIsRotate());
 
@@ -4158,7 +4144,6 @@ void CodeGen::genCodeForShiftRMW(GenTreeStoreInd* storeInd)
         // We must have the number of bits to shift stored in ECX, since we constrained this node to
         // sit in ECX. In case this didn't happen, LSRA expects the code generator to move it since it's a single
         // register destination requirement.
-        regNumber shiftReg = shiftBy->gtRegNum;
         genCopyRegIfNeeded(shiftBy, REG_RCX);
 
         // The shiftBy operand is implicit, so call the unary version of emitInsRMW.
@@ -5619,9 +5604,12 @@ void CodeGen::genJmpMethod(GenTree* jmp)
     genProfilingLeaveCallback(CORINFO_HELP_PROF_FCN_TAILCALL);
 #endif
 
-    // Next move any un-enregistered register arguments back to their register.
+// Next move any un-enregistered register arguments back to their register.
+#if FEATURE_VARARG && defined(_TARGET_AMD64_)
     regMaskTP fixedIntArgMask = RBM_NONE;    // tracks the int arg regs occupying fixed args in case of a vararg method.
     unsigned  firstArgVarNum  = BAD_VAR_NUM; // varNum of the first argument in case of a vararg method.
+#endif                                       // FEATURE_VARARG && _TARGET_AMD64_
+
     for (varNum = 0; (varNum < compiler->info.compArgsCount); varNum++)
     {
         varDsc = compiler->lvaTable + varNum;
@@ -5755,7 +5743,7 @@ void CodeGen::genJmpMethod(GenTree* jmp)
                 firstArgVarNum = varNum;
             }
         }
-#endif // FEATURE_VARARG
+#endif // FEATURE_VARARG && _TARGET_AMD64_
     }
 
 #if FEATURE_VARARG && defined(_TARGET_AMD64_)
@@ -5801,7 +5789,7 @@ void CodeGen::genJmpMethod(GenTree* jmp)
             getEmitter()->emitEnableGC();
         }
     }
-#endif // FEATURE_VARARG
+#endif // FEATURE_VARARG && _TARGET_AMD64_
 }
 
 // produce code for a GT_LEA subnode
