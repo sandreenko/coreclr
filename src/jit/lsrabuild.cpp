@@ -289,9 +289,8 @@ void LinearScan::resolveConflictingDefAndUse(Interval* interval, RefPosition* de
     }
     if (useRefPosition->isFixedRegRef && !useRegConflict)
     {
-        useReg                               = useRefPosition->assignedReg();
-        useRegRecord                         = getRegisterRecord(useReg);
-        RefPosition* currFixedRegRefPosition = useRegRecord->recentRefPosition;
+        useReg       = useRefPosition->assignedReg();
+        useRegRecord = getRegisterRecord(useReg);
 
         // We know that useRefPosition is a fixed use, so the nextRefPosition must not be null.
         RefPosition* nextFixedRegRefPosition = useRegRecord->getNextRefPosition();
@@ -593,8 +592,8 @@ RefPosition* LinearScan::newRefPosition(Interval*    theInterval,
 
     if (insertFixedRef)
     {
-        regNumber    physicalReg = genRegNumFromMask(mask);
-        RefPosition* pos         = newRefPosition(physicalReg, theLocation, RefTypeFixedReg, nullptr, mask);
+        regNumber physicalReg = genRegNumFromMask(mask);
+        newRefPosition(physicalReg, theLocation, RefTypeFixedReg, nullptr, mask);
         assert(theInterval != nullptr);
         assert((allRegs(theInterval->registerType) & mask) != 0);
     }
@@ -1194,8 +1193,7 @@ bool LinearScan::buildKillPositionsForNode(GenTree* tree, LsraLocation currentLo
 
         if (compiler->killGCRefs(tree))
         {
-            RefPosition* pos = newRefPosition((Interval*)nullptr, currentLoc, RefTypeKillGCRefs, tree,
-                                              (allRegs(TYP_REF) & ~RBM_ARG_REGS));
+            newRefPosition((Interval*)nullptr, currentLoc, RefTypeKillGCRefs, tree, (allRegs(TYP_REF) & ~RBM_ARG_REGS));
         }
         return true;
     }
@@ -1339,8 +1337,7 @@ LinearScan::buildUpperVectorSaveRefPositions(GenTree* tree, LsraLocation current
                 Interval* varInterval    = getIntervalForLocalVar(varIndex);
                 Interval* tempInterval   = newInterval(varInterval->registerType);
                 tempInterval->isInternal = true;
-                RefPosition* pos =
-                    newRefPosition(tempInterval, currentLoc, RefTypeUpperVectorSaveDef, tree, RBM_FLT_CALLEE_SAVED);
+                newRefPosition(tempInterval, currentLoc, RefTypeUpperVectorSaveDef, tree, RBM_FLT_CALLEE_SAVED);
                 // We are going to save the existing relatedInterval of varInterval on tempInterval, so that we can set
                 // the tempInterval as the relatedInterval of varInterval, so that we can build the corresponding
                 // RefTypeUpperVectorSaveUse RefPosition.  We will then restore the relatedInterval onto varInterval,
@@ -1375,8 +1372,7 @@ void LinearScan::buildUpperVectorRestoreRefPositions(GenTree*         tree,
             Interval* varInterval  = getIntervalForLocalVar(varIndex);
             Interval* tempInterval = varInterval->relatedInterval;
             assert(tempInterval->isInternal == true);
-            RefPosition* pos =
-                newRefPosition(tempInterval, currentLoc, RefTypeUpperVectorSaveUse, tree, RBM_FLT_CALLEE_SAVED);
+            newRefPosition(tempInterval, currentLoc, RefTypeUpperVectorSaveUse, tree, RBM_FLT_CALLEE_SAVED);
             // Restore the relatedInterval onto varInterval, and set varInterval as the relatedInterval
             // of tempInterval.
             varInterval->relatedInterval  = tempInterval->relatedInterval;
@@ -1535,18 +1531,18 @@ void LinearScan::buildRefPositionsForNode(GenTree* tree, BasicBlock* block, Lsra
     // we've built for this node after we've created them. In order to do that, we'll remember
     // the last RefPosition prior to those created for this node.
     RefPositionIterator refPositionMark = refPositions.backPosition();
-    int                 oldDefListCount = defList.Count();
 #endif // DEBUG
 
     int consume = BuildNode(tree);
 
 #ifdef DEBUG
-    int newDefListCount = defList.Count();
-    int produce         = newDefListCount - oldDefListCount;
     assert((consume == 0) || (ComputeAvailableSrcCount(tree) == consume));
 
 #if defined(_TARGET_AMD64_)
     // Multi-reg call node is the only node that could produce multi-reg value
+    int newDefListCount = defList.Count();
+    int oldDefListCount = defList.Count();
+    int produce         = newDefListCount - oldDefListCount;
     assert(produce <= 1 || (tree->IsMultiRegCall() && produce == MAX_RET_REG_COUNT));
 #endif // _TARGET_AMD64_
 
@@ -1636,7 +1632,6 @@ void LinearScan::buildRefPositionsForNode(GenTree* tree, BasicBlock* block, Lsra
 //
 void LinearScan::buildPhysRegRecords()
 {
-    RegisterType regType = IntRegisterType;
     for (regNumber reg = REG_FIRST; reg < ACTUAL_REG_COUNT; reg = REG_NEXT(reg))
     {
         RegRecord* curr = &physRegs[reg];
@@ -1712,9 +1707,8 @@ void LinearScan::insertZeroInitRefPositions()
             if (compiler->info.compInitMem || varTypeIsGC(varDsc->TypeGet()))
             {
                 JITDUMP(" creating ZeroInit\n");
-                GenTree*     firstNode = getNonEmptyBlock(compiler->fgFirstBB)->firstNode();
-                RefPosition* pos =
-                    newRefPosition(interval, MinLocation, RefTypeZeroInit, firstNode, allRegs(interval->registerType));
+                GenTree* firstNode = getNonEmptyBlock(compiler->fgFirstBB)->firstNode();
+                newRefPosition(interval, MinLocation, RefTypeZeroInit, firstNode, allRegs(interval->registerType));
                 varDsc->lvMustInit = true;
             }
             else
@@ -1956,7 +1950,7 @@ void LinearScan::buildIntervals()
                 mask = genRegMask(inArgReg);
                 assignPhysReg(inArgReg, interval);
             }
-            RefPosition* pos = newRefPosition(interval, MinLocation, RefTypeParamDef, nullptr, mask);
+            newRefPosition(interval, MinLocation, RefTypeParamDef, nullptr, mask);
         }
         else if (varTypeIsStruct(argDsc->lvType))
         {
@@ -1967,9 +1961,8 @@ void LinearScan::buildIntervals()
                 if (fieldVarDsc->lvLRACandidate)
                 {
                     assert(fieldVarDsc->lvTracked);
-                    Interval*    interval = getIntervalForLocalVar(fieldVarDsc->lvVarIndex);
-                    RefPosition* pos =
-                        newRefPosition(interval, MinLocation, RefTypeParamDef, nullptr, allRegs(TypeGet(fieldVarDsc)));
+                    Interval* interval = getIntervalForLocalVar(fieldVarDsc->lvVarIndex);
+                    newRefPosition(interval, MinLocation, RefTypeParamDef, nullptr, allRegs(TypeGet(fieldVarDsc)));
                 }
             }
         }
@@ -2081,9 +2074,8 @@ void LinearScan::buildIntervals()
                     // If this is the entry block, don't add any incoming parameters (they're handled with ParamDefs).
                     if (isCandidateVar(varDsc) && (predBlock != nullptr || !varDsc->lvIsParam))
                     {
-                        Interval*    interval = getIntervalForLocalVar(varIndex);
-                        RefPosition* pos      = newRefPosition(interval, currentLoc, RefTypeDummyDef, nullptr,
-                                                          allRegs(interval->registerType));
+                        Interval* interval = getIntervalForLocalVar(varIndex);
+                        newRefPosition(interval, currentLoc, RefTypeDummyDef, nullptr, allRegs(interval->registerType));
                     }
                 }
                 JITDUMP("Finished creating dummy definitions\n\n");
@@ -2095,7 +2087,7 @@ void LinearScan::buildIntervals()
         // register positions for those exposed uses need to be recorded at
         // this point.
 
-        RefPosition* pos = newRefPosition((Interval*)nullptr, currentLoc, RefTypeBB, nullptr, RBM_NONE);
+        newRefPosition((Interval*)nullptr, currentLoc, RefTypeBB, nullptr, RBM_NONE);
         currentLoc += 2;
         JITDUMP("\n");
 
@@ -2187,9 +2179,8 @@ void LinearScan::buildIntervals()
                     unsigned   varNum = compiler->lvaTrackedToVarNum[varIndex];
                     LclVarDsc* varDsc = compiler->lvaTable + varNum;
                     assert(isCandidateVar(varDsc));
-                    Interval*    interval = getIntervalForLocalVar(varIndex);
-                    RefPosition* pos =
-                        newRefPosition(interval, currentLoc, RefTypeExpUse, nullptr, allRegs(interval->registerType));
+                    Interval* interval = getIntervalForLocalVar(varIndex);
+                    newRefPosition(interval, currentLoc, RefTypeExpUse, nullptr, allRegs(interval->registerType));
                     JITDUMP(" V%02u", varNum);
                 }
                 JITDUMP("\n");
@@ -2243,9 +2234,8 @@ void LinearScan::buildIntervals()
             if (isCandidateVar(varDsc))
             {
                 JITDUMP("Adding exposed use of this, for lvaKeepAliveAndReportThis\n");
-                Interval*    interval = getIntervalForLocalVar(varDsc->lvVarIndex);
-                RefPosition* pos =
-                    newRefPosition(interval, currentLoc, RefTypeExpUse, nullptr, allRegs(interval->registerType));
+                Interval* interval = getIntervalForLocalVar(varDsc->lvVarIndex);
+                newRefPosition(interval, currentLoc, RefTypeExpUse, nullptr, allRegs(interval->registerType));
             }
         }
 
@@ -2258,9 +2248,8 @@ void LinearScan::buildIntervals()
                 if (varDsc->lvLRACandidate)
                 {
                     JITDUMP("Adding exposed use of V%02u for LsraExtendLifetimes\n", lclNum);
-                    Interval*    interval = getIntervalForLocalVar(varDsc->lvVarIndex);
-                    RefPosition* pos =
-                        newRefPosition(interval, currentLoc, RefTypeExpUse, nullptr, allRegs(interval->registerType));
+                    Interval* interval = getIntervalForLocalVar(varDsc->lvVarIndex);
+                    newRefPosition(interval, currentLoc, RefTypeExpUse, nullptr, allRegs(interval->registerType));
                 }
             }
         }
@@ -2272,7 +2261,7 @@ void LinearScan::buildIntervals()
 
     if (prevBlock->NumSucc(compiler) > 0)
     {
-        RefPosition* pos = newRefPosition((Interval*)nullptr, currentLoc, RefTypeBB, nullptr, RBM_NONE);
+        newRefPosition((Interval*)nullptr, currentLoc, RefTypeBB, nullptr, RBM_NONE);
     }
 
 #ifdef DEBUG
@@ -2741,7 +2730,6 @@ int LinearScan::BuildDelayFreeUses(GenTree* node, regMaskTP candidates)
 int LinearScan::BuildBinaryUses(GenTreeOp* node, regMaskTP candidates)
 {
 #ifdef _TARGET_XARCH_
-    RefPosition* tgtPrefUse = nullptr;
     if (node->OperIsBinary() && isRMWRegOper(node))
     {
         return BuildRMWUses(node, candidates);
@@ -2807,7 +2795,6 @@ int LinearScan::BuildStoreLoc(GenTreeLclVarCommon* storeLoc)
         // srcCount = number of registers in which the value is returned by call
         GenTreeCall*    call        = op1->AsCall();
         ReturnTypeDesc* retTypeDesc = call->GetReturnTypeDesc();
-        unsigned        regCount    = retTypeDesc->GetReturnRegCount();
         srcCount                    = retTypeDesc->GetReturnRegCount();
 
         for (int i = 0; i < srcCount; ++i)
@@ -3208,7 +3195,6 @@ void LinearScan::HandleFloatVarArgs(GenTreeCall* call, GenTree* argNode, bool* c
 //
 int LinearScan::BuildGCWriteBarrier(GenTree* tree)
 {
-    GenTree* dst  = tree;
     GenTree* addr = tree->gtGetOp1();
     GenTree* src  = tree->gtGetOp2();
 
@@ -3216,7 +3202,6 @@ int LinearScan::BuildGCWriteBarrier(GenTree* tree)
     // is an indir through an lea, we need to actually instantiate the
     // lea in a register
     assert(!addr->isContained() && !src->isContained());
-    int       srcCount       = 2;
     regMaskTP addrCandidates = RBM_ARG_0;
     regMaskTP srcCandidates  = RBM_ARG_1;
 
