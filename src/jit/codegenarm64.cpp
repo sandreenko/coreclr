@@ -1840,7 +1840,6 @@ void CodeGen::genLclHeap(GenTree* tree)
 
     regNumber   targetReg       = tree->gtRegNum;
     regNumber   regCnt          = REG_NA;
-    regNumber   pspSymReg       = REG_NA;
     var_types   type            = genActualType(size->gtType);
     emitAttr    easz            = emitTypeSize(type);
     BasicBlock* endLabel        = nullptr;

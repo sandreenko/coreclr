@@ -9,7 +9,6 @@ class Rationalizer : public Phase
 {
 private:
     BasicBlock*  m_block;
-    GenTreeStmt* m_statement;
 
 public:
     Rationalizer(Compiler* comp);
