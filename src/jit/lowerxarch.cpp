@@ -612,9 +612,13 @@ void Lowering::LowerPutArgStk(GenTreePutArgStk* putArgStk)
     // The cpyXXXX code is rather complex and this could cause it to be more complex, but
     // it might be the right thing to do.
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-variable"
     // This threshold will decide from using the helper or let the JIT decide to inline
     // a code sequence of its choice, but currently we use CPBLK_UNROLL_LIMIT, see #20549.
     ssize_t helperThreshold = max(CPBLK_MOVS_LIMIT, CPBLK_UNROLL_LIMIT);
+#pragma clang diagnostic pop
+
     ssize_t size            = putArgStk->gtNumSlots * TARGET_POINTER_SIZE;
 
     // TODO-X86-CQ: The helper call either is not supported on x86 or required more work

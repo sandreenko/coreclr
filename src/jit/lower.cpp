@@ -2196,8 +2196,11 @@ GenTree* Lowering::LowerTailCallViaHelper(GenTreeCall* call, GenTree* callTarget
         BlockRange().Remove(std::move(callAddrRange));
     }
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-variable"
     // The callTarget tree needs to be sequenced.
     LIR::Range callTargetRange = LIR::SeqTree(comp, callTarget);
+#pragma clang diagnostic pop
 
 #if defined(_TARGET_AMD64_) || defined(_TARGET_ARM_)
 

@@ -18,6 +18,11 @@ XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
 #include "allocacheck.h" // for alloca
 
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-variable"
+
+
 // Convert the given node into a call to the specified helper passing
 // the given argument list.
 //
@@ -18947,3 +18952,5 @@ GenTreeArgList* Compiler::fgMorphArgList(GenTreeArgList* args, MorphAddrContext*
 
     return args;
 }
+
+#pragma clang diagnostic pop

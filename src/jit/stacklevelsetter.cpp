@@ -97,7 +97,10 @@ void StackLevelSetter::ProcessBlock(BasicBlock* block)
         if (node->IsCall())
         {
             GenTreeCall* call                = node->AsCall();
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-variable"
             unsigned     usedStackSlotsCount = PopArgumentsFromCall(call);
+#pragma clang diagnostic pop
 #if defined(UNIX_X86_ABI)
             call->fgArgInfo->SetStkSizeBytes(usedStackSlotsCount * TARGET_POINTER_SIZE);
 #endif // UNIX_X86_ABI

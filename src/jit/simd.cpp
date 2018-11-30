@@ -369,9 +369,12 @@ var_types Compiler::getBaseTypeAndSizeOfSIMDType(CORINFO_CLASS_HANDLE typeHnd, u
 #ifdef FEATURE_HW_INTRINSICS
     else if (isIntrinsicType(typeHnd))
     {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-variable"
         const size_t Vector64SizeBytes  = 64 / 8;
         const size_t Vector128SizeBytes = 128 / 8;
         const size_t Vector256SizeBytes = 256 / 8;
+#pragma clang diagnostic pop
 
 #if defined(_TARGET_XARCH_)
         static_assert_no_msg(YMM_REGSIZE_BYTES == Vector256SizeBytes);
