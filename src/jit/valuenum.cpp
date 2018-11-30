@@ -5834,8 +5834,6 @@ void Compiler::fgValueNumberBlock(BasicBlock* blk)
     compCurStmtNum = blk->bbStmtNum - 1; // Set compCurStmtNum
 #endif
 
-    unsigned outerLoopNum = BasicBlock::NOT_IN_LOOP;
-
     // First: visit phi's.  If "newVNForPhis", give them new VN's.  If not,
     // first check to see if all phi args have the same value.
     GenTree* firstNonPhi = blk->FirstNonPhiDef();
@@ -7755,8 +7753,7 @@ void Compiler::fgValueNumberTree(GenTree* tree)
             // can recognize redundant loads with no stores between them.
             GenTree*             addr         = tree->AsIndir()->Addr();
             GenTreeLclVarCommon* lclVarTree   = nullptr;
-            FieldSeqNode*        fldSeq1      = nullptr;
-            FieldSeqNode*        fldSeq2      = nullptr;
+            FieldSeqNode*        fldSeq      = nullptr;
             GenTree*             obj          = nullptr;
             GenTree*             staticOffset = nullptr;
             bool                 isVolatile   = (tree->gtFlags & GTF_IND_VOLATILE) != 0;
@@ -7796,9 +7793,6 @@ void Compiler::fgValueNumberTree(GenTree* tree)
 
                 ValueNum      inxVN  = ValueNumStore::NoVN;
                 FieldSeqNode* fldSeq = nullptr;
-
-                // GenTree* addr = tree->gtOp.gtOp1;
-                ValueNum addrVN = addrNvnp.GetLiberal();
 
                 // Try to parse it.
                 GenTree* arr = nullptr;
@@ -7917,20 +7911,20 @@ void Compiler::fgValueNumberTree(GenTree* tree)
                 {
                     fgValueNumberArrIndexVal(tree, &funcApp, addrXvnp.GetLiberal());
                 }
-                else if (addr->IsFieldAddr(this, &obj, &staticOffset, &fldSeq2))
+                else if (addr->IsFieldAddr(this, &obj, &staticOffset, &fldSeq))
                 {
-                    if (fldSeq2 == FieldSeqStore::NotAField())
+                    if (fldSeq == FieldSeqStore::NotAField())
                     {
                         tree->gtVNPair.SetBoth(vnStore->VNForExpr(compCurBB, tree->TypeGet()));
                     }
-                    else if (fldSeq2 != nullptr)
+                    else if (fldSeq != nullptr)
                     {
                         // Get the first (instance or static) field from field seq.  GcHeap[field] will yield the "field
                         // map".
                         CLANG_FORMAT_COMMENT_ANCHOR;
 
 #ifdef DEBUG
-                        CORINFO_CLASS_HANDLE fldCls = info.compCompHnd->getFieldClass(fldSeq2->m_fieldHnd);
+                        CORINFO_CLASS_HANDLE fldCls = info.compCompHnd->getFieldClass(fldSeq->m_fieldHnd);
                         if (obj != nullptr)
                         {
                             // Make sure that the class containing it is not a value class (as we are expecting an
@@ -7942,7 +7936,7 @@ void Compiler::fgValueNumberTree(GenTree* tree)
 
                         // Get a field sequence for just the first field in the sequence
                         //
-                        FieldSeqNode* firstFieldOnly = GetFieldSeqStore()->CreateSingleton(fldSeq2->m_fieldHnd);
+                        FieldSeqNode* firstFieldOnly = GetFieldSeqStore()->CreateSingleton(fldSeq->m_fieldHnd);
                         size_t        structSize     = 0;
                         ValueNum      fldMapVN =
                             vnStore->VNApplySelectors(VNK_Liberal, fgCurMemoryVN[GcHeap], firstFieldOnly, &structSize);
@@ -7969,9 +7963,9 @@ void Compiler::fgValueNumberTree(GenTree* tree)
                         }
 
                         // Now get rid of any remaining struct field dereferences.
-                        if (fldSeq2->m_next)
+                        if (fldSeq->m_next)
                         {
-                            valAtAddr = vnStore->VNApplySelectors(VNK_Liberal, valAtAddr, fldSeq2->m_next, &structSize);
+                            valAtAddr = vnStore->VNApplySelectors(VNK_Liberal, valAtAddr, fldSeq->m_next, &structSize);
                         }
                         valAtAddr = vnStore->VNApplySelectorsTypeCheck(valAtAddr, indType, structSize);
 
@@ -9582,7 +9576,8 @@ void Compiler::JitTestCheckVN()
                 }
                 // The mapping(s) must be one-to-one: if the label has a mapping, then the ssaNm must, as well.
                 ssize_t num2;
-                bool    b = vnToLabel->Lookup(vn, &num2);
+                bool    found = vnToLabel->Lookup(vn, &num2);
+                assert(found);
                 // And the mappings must be the same.
                 if (tlAndN.m_num != num2)
                 {

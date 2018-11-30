@@ -1236,7 +1236,6 @@ void CodeGen::genBaseIntrinsic(GenTreeHWIntrinsic* node)
 {
     NamedIntrinsic intrinsicId = node->gtHWIntrinsicId;
     regNumber      targetReg   = node->gtRegNum;
-    var_types      targetType  = node->TypeGet();
     var_types      baseType    = node->gtSIMDBaseType;
 
     assert(node->gtGetOp1() == nullptr);
