@@ -2101,7 +2101,11 @@ inline
         assert((unsigned)varNum < lvaCount);
         varDsc               = lvaTable + varNum;
         type                 = varDsc->TypeGet();
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-variable"
         bool isPrespilledArg = false;
+#pragma clang diagnostic pop
+
 #if defined(_TARGET_ARM_) && defined(PROFILING_SUPPORTED)
         isPrespilledArg = varDsc->lvIsParam && compIsProfilerHookNeeded() &&
                           lvaIsPreSpilled(varNum, codeGen->regSet.rsMaskPreSpillRegs(false));

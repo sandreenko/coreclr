@@ -25946,10 +25946,13 @@ unsigned Compiler::fgMeasureIR()
         }
         else
         {
+            #pragma clang diagnostic push
+            #pragma clang diagnostic ignored "-Wunused-variable"
             for (GenTree* node : LIR::AsRange(block))
             {
                 nodeCount++;
             }
+            #pragma clang diagnostic pop
         }
     }
 

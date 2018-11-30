@@ -313,6 +313,7 @@ else()
 
   set(JIT_EXPORTS_FILE ${CMAKE_CURRENT_BINARY_DIR}/clrjit.exports)
   generate_exports_file(${JIT_EXPORTS_IN_FILE} ${JIT_EXPORTS_FILE})
+  add_compile_options("-Wunused")
 
   if(CMAKE_SYSTEM_NAME STREQUAL Linux OR CMAKE_SYSTEM_NAME STREQUAL FreeBSD OR CMAKE_SYSTEM_NAME STREQUAL NetBSD)
     # This is required to force using our own PAL, not one that we are loaded with.

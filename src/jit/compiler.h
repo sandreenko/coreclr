@@ -1076,7 +1076,11 @@ class CompTimeSummaryInfo
     static CritSecObject s_compTimeSummaryLock;
 
     int          m_numMethods;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-private-field"
     int          m_totMethods;
+#pragma clang diagnostic pop
+
     CompTimeInfo m_total;
     CompTimeInfo m_maximum;
 
