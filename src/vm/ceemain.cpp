@@ -1461,6 +1461,8 @@ void WaitForEndOfShutdown()
     while (!WaitForEndOfShutdown_OneIteration());
 }
 
+#include <windows.h>
+
 // ---------------------------------------------------------------------------
 // Function: EEShutDownHelper(BOOL fIsDllUnloading)
 //
@@ -1707,7 +1709,16 @@ void STDMETHODCALLTYPE EEShutDownHelper(BOOL fIsDllUnloading)
             {
                 if (pThisThread!= NULL)
                 {
+                    printf("pThisThread != NULL\n");
+#undef Sleep
+                    ::Sleep(5000);
+#define Sleep(a) Dont_Use_Sleep(a)                    
+                    
                     pThisThread->CoUninitialize();
+
+#undef Sleep
+                    ::Sleep(5000);
+#define Sleep(a) Dont_Use_Sleep(a)
                 }
             }
 #endif // FEATURE_COMINTEROP
