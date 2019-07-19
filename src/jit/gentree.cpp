@@ -1036,7 +1036,12 @@ void GenTreeCall::ReplaceCallOperand(GenTree** useEdge, GenTree* replacement)
 {
     assert(useEdge != nullptr);
     assert(replacement != nullptr);
-    assert(TryGetUse(*useEdge, &useEdge));
+#ifdef DEBUG
+    GenTree*  origNode     = *useEdge;
+    GenTree** checkUseEdge = nullptr;
+    assert(TryGetUse(*useEdge, &checkUseEdge));
+    assert(checkUseEdge == useEdge); // Check that we have the right edge.
+#endif                               // DEBUG
 
     GenTree* originalOperand = *useEdge;
     *useEdge                 = replacement;
@@ -4857,12 +4862,7 @@ bool GenTree::TryGetUse(GenTree* def, GenTree*** use)
             return false;
 
         case GT_STMT:
-            if (def == this->AsStmt()->gtStmtExpr)
-            {
-                *use = &this->AsStmt()->gtStmtExpr;
-                return true;
-            }
-            return false;
+            unreached(); // Should not call TryGetUse on statements.
 
         case GT_ARR_ELEM:
         {
@@ -5032,7 +5032,12 @@ void GenTree::ReplaceOperand(GenTree** useEdge, GenTree* replacement)
 {
     assert(useEdge != nullptr);
     assert(replacement != nullptr);
-    assert(TryGetUse(*useEdge, &useEdge));
+#ifdef DEBUG
+    GenTree*  origNode     = *useEdge;
+    GenTree** checkUseEdge = nullptr;
+    assert(TryGetUse(*useEdge, &checkUseEdge));
+    assert(checkUseEdge == useEdge); // Check that we have the right edge.
+#endif                               // DEBUG
 
     if (OperGet() == GT_CALL)
     {
