@@ -8568,16 +8568,7 @@ GenTreeUseEdgeIterator::GenTreeUseEdgeIterator(GenTree* node)
             return;
 
         case GT_STMT:
-            if (m_node->AsStmt()->gtStmtExpr == nullptr)
-            {
-                m_state = -1;
-            }
-            else
-            {
-                m_edge    = &m_node->AsStmt()->gtStmtExpr;
-                m_advance = &GenTreeUseEdgeIterator::Terminate;
-            }
-            return;
+            unreached();
 
         case GT_ARR_ELEM:
             m_edge = &m_node->AsArrElem()->gtArrObj;
