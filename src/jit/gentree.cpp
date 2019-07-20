@@ -8286,7 +8286,7 @@ GenTree* GenTree::GetChild(unsigned childNum)
                 return AsField()->gtFldObj;
 
             case GT_STMT:
-                return AsStmt()->gtStmtExpr;
+                unreached(); // Access stmt's child directly.
 
             case GT_ARR_ELEM:
                 if (childNum == 0)
