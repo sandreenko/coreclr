@@ -9397,7 +9397,7 @@ BasicBlock* Compiler::fgSplitBlockAfterStatement(BasicBlock* curr, GenTreeStmt* 
     if (stmt != nullptr)
     {
         newBlock->bbTreeList = stmt->gtNext;
-        if (newBlock->bbTreeList)
+        if (newBlock->bbTreeList != nullptr)
         {
             newBlock->bbTreeList->gtPrev = curr->bbTreeList->gtPrev;
         }
@@ -10245,15 +10245,15 @@ void Compiler::fgCompactBlocks(BasicBlock* block, BasicBlock* bNext)
     }
     else
     {
-        GenTree* blkNonPhi1   = block->FirstNonPhiDef();
-        GenTree* bNextNonPhi1 = bNext->FirstNonPhiDef();
-        GenTree* blkFirst     = block->firstStmt();
-        GenTree* bNextFirst   = bNext->firstStmt();
+        GenTreeStmt* blkNonPhi1   = block->FirstNonPhiDef();
+        GenTreeStmt* bNextNonPhi1 = bNext->FirstNonPhiDef();
+        GenTreeStmt* blkFirst     = block->firstStmt();
+        GenTreeStmt* bNextFirst   = bNext->firstStmt();
 
         // Does the second have any phis?
         if (bNextFirst != nullptr && bNextFirst != bNextNonPhi1)
         {
-            GenTree* bNextLast = bNextFirst->gtPrev;
+            GenTreeStmt* bNextLast = bNextFirst->gtPrevStmt;
             assert(bNextLast->gtNext == nullptr);
 
             // Does "blk" have phis?
@@ -10262,28 +10262,28 @@ void Compiler::fgCompactBlocks(BasicBlock* block, BasicBlock* bNext)
                 // Yes, has phis.
                 // Insert after the last phi of "block."
                 // First, bNextPhis after last phi of block.
-                GenTree* blkLastPhi;
+                GenTreeStmt* blkLastPhi;
                 if (blkNonPhi1 != nullptr)
                 {
-                    blkLastPhi = blkNonPhi1->gtPrev;
+                    blkLastPhi = blkNonPhi1->gtPrevStmt;
                 }
                 else
                 {
-                    blkLastPhi = blkFirst->gtPrev;
+                    blkLastPhi = blkFirst->gtPrevStmt;
                 }
 
                 blkLastPhi->gtNext = bNextFirst;
                 bNextFirst->gtPrev = blkLastPhi;
 
                 // Now, rest of "block" after last phi of "bNext".
-                GenTree* bNextLastPhi = nullptr;
+                GenTreeStmt* bNextLastPhi = nullptr;
                 if (bNextNonPhi1 != nullptr)
                 {
-                    bNextLastPhi = bNextNonPhi1->gtPrev;
+                    bNextLastPhi = bNextNonPhi1->gtPrevStmt;
                 }
                 else
                 {
-                    bNextLastPhi = bNextFirst->gtPrev;
+                    bNextLastPhi = bNextFirst->gtPrevStmt;
                 }
 
                 bNextLastPhi->gtNext = blkNonPhi1;
@@ -10309,19 +10309,19 @@ void Compiler::fgCompactBlocks(BasicBlock* block, BasicBlock* bNext)
                 if (blkFirst != nullptr) // If "block" has no statements, fusion will work fine...
                 {
                     // First, bNextPhis at start of block.
-                    GenTree* blkLast  = blkFirst->gtPrev;
-                    block->bbTreeList = bNextFirst;
+                    GenTreeStmt* blkLast = blkFirst->gtPrevStmt;
+                    block->bbTreeList    = bNextFirst;
                     // Now, rest of "block" (if it exists) after last phi of "bNext".
-                    GenTree* bNextLastPhi = nullptr;
+                    GenTreeStmt* bNextLastPhi = nullptr;
                     if (bNextNonPhi1 != nullptr)
                     {
                         // There is a first non phi, so the last phi is before it.
-                        bNextLastPhi = bNextNonPhi1->gtPrev;
+                        bNextLastPhi = bNextNonPhi1->gtPrevStmt;
                     }
                     else
                     {
                         // All the statements are phi defns, so the last one is the prev of the first.
-                        bNextLastPhi = bNextFirst->gtPrev;
+                        bNextLastPhi = bNextFirst->gtPrevStmt;
                     }
                     bNextFirst->gtPrev   = blkLast;
                     bNextLastPhi->gtNext = blkFirst;
@@ -14580,7 +14580,7 @@ bool Compiler::fgOptimizeBranchToNext(BasicBlock* block, BasicBlock* bNext, Basi
     {
         /* remove the conditional statement at the end of block */
         noway_assert(block->bbJumpKind == BBJ_COND);
-        noway_assert(block->bbTreeList);
+        noway_assert(block->bbTreeList != nullptr);
 
 #ifdef DEBUG
         if (verbose)
@@ -21029,7 +21029,7 @@ void Compiler::fgDebugCheckBBlist(bool checkBBNum /* = false */, bool checkBBRef
     // Make sure the one return BB is not changed.
     if (genReturnBB != nullptr)
     {
-        assert(genReturnBB->bbTreeList);
+        assert(genReturnBB->bbTreeList != nullptr);
         assert(genReturnBB->IsLIR() || genReturnBB->bbTreeList->gtOper == GT_STMT);
         assert(genReturnBB->IsLIR() || genReturnBB->bbTreeList->gtType == TYP_VOID);
     }
@@ -22908,7 +22908,7 @@ void Compiler::fgInsertInlineeBlocks(InlineInfo* pInlineInfo)
         if (InlineeCompiler->fgFirstBB->bbJumpKind == BBJ_RETURN)
         {
             // Inlinee contains just one BB. So just insert its statement list to topBlock.
-            if (InlineeCompiler->fgFirstBB->bbTreeList)
+            if (InlineeCompiler->fgFirstBB->bbTreeList != nullptr)
             {
                 stmtAfter = fgInsertStmtListAfter(iciBlock, stmtAfter, InlineeCompiler->fgFirstBB->firstStmt());
 
@@ -22969,21 +22969,16 @@ void Compiler::fgInsertInlineeBlocks(InlineInfo* pInlineInfo)
     //
     // Split statements between topBlock and bottomBlock
     //
-    GenTree* topBlock_Begin;
-    GenTree* topBlock_End;
-    GenTree* bottomBlock_Begin;
-    GenTree* bottomBlock_End;
-
-    topBlock_Begin    = nullptr;
-    topBlock_End      = nullptr;
-    bottomBlock_Begin = nullptr;
-    bottomBlock_End   = nullptr;
+    GenTreeStmt* topBlock_Begin    = nullptr;
+    GenTreeStmt* topBlock_End      = nullptr;
+    GenTreeStmt* bottomBlock_Begin = nullptr;
+    GenTreeStmt* bottomBlock_End   = nullptr;
 
     //
     // First figure out bottomBlock_Begin
     //
 
-    bottomBlock_Begin = stmtAfter->gtNext;
+    bottomBlock_Begin = stmtAfter->gtNextStmt;
 
     if (topBlock->bbTreeList == nullptr)
     {
@@ -22995,7 +22990,7 @@ void Compiler::fgInsertInlineeBlocks(InlineInfo* pInlineInfo)
     }
     else if (topBlock->bbTreeList == bottomBlock_Begin)
     {
-        noway_assert(bottomBlock_Begin);
+        noway_assert(bottomBlock_Begin != nullptr);
 
         // topBlock contains at least one statement before the split.
         // And the split is before the first statement.
@@ -23005,7 +23000,7 @@ void Compiler::fgInsertInlineeBlocks(InlineInfo* pInlineInfo)
     }
     else if (bottomBlock_Begin == nullptr)
     {
-        noway_assert(topBlock->bbTreeList);
+        noway_assert(topBlock->bbTreeList != nullptr);
 
         // topBlock contains at least one statement before the split.
         // And the split is at the end of the topBlock.
@@ -23015,13 +23010,13 @@ void Compiler::fgInsertInlineeBlocks(InlineInfo* pInlineInfo)
     }
     else
     {
-        noway_assert(topBlock->bbTreeList);
-        noway_assert(bottomBlock_Begin);
+        noway_assert(topBlock->bbTreeList != nullptr);
+        noway_assert(bottomBlock_Begin != nullptr);
 
         // This is the normal case where both blocks should contain at least one statement.
-        topBlock_Begin = topBlock->bbTreeList;
-        noway_assert(topBlock_Begin);
-        topBlock_End = bottomBlock_Begin->gtPrev;
+        topBlock_Begin = topBlock->firstStmt();
+        noway_assert(topBlock_Begin != nullptr);
+        topBlock_End = bottomBlock_Begin->gtPrevStmt;
         noway_assert(topBlock_End);
         bottomBlock_End = topBlock->lastStmt();
         noway_assert(bottomBlock_End);

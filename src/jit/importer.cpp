@@ -2557,26 +2557,21 @@ BasicBlock* Compiler::impPushCatchArgOnStack(BasicBlock* hndBlk, CORINFO_CLASS_H
     if ((hndBlk->bbFlags & (BBF_IMPORTED | BBF_INTERNAL | BBF_DONT_REMOVE | BBF_HAS_LABEL | BBF_JMP_TARGET)) ==
         (BBF_IMPORTED | BBF_INTERNAL | BBF_DONT_REMOVE | BBF_HAS_LABEL | BBF_JMP_TARGET))
     {
-        GenTree* tree = hndBlk->bbTreeList;
+        GenTreeStmt* stmt = hndBlk->firstStmt();
+        assert(stmt != nullptr);
 
-        if (tree != nullptr && tree->gtOper == GT_STMT)
+        GenTree* tree = stmt->gtStmtExpr;
+        assert(tree != nullptr);
+
+        if ((tree->gtOper == GT_ASG) && (tree->gtOp.gtOp1->gtOper == GT_LCL_VAR) &&
+            (tree->gtOp.gtOp2->gtOper == GT_CATCH_ARG))
         {
-            tree = tree->gtStmt.gtStmtExpr;
-            assert(tree != nullptr);
+            tree = gtNewLclvNode(tree->gtOp.gtOp1->gtLclVarCommon.gtLclNum, TYP_REF);
 
-            if ((tree->gtOper == GT_ASG) && (tree->gtOp.gtOp1->gtOper == GT_LCL_VAR) &&
-                (tree->gtOp.gtOp2->gtOper == GT_CATCH_ARG))
-            {
-                tree = gtNewLclvNode(tree->gtOp.gtOp1->gtLclVarCommon.gtLclNum, TYP_REF);
+            impPushOnStack(tree, typeInfo(TI_REF, clsHnd));
 
-                impPushOnStack(tree, typeInfo(TI_REF, clsHnd));
-
-                return hndBlk->bbNext;
-            }
+            return hndBlk->bbNext;
         }
-
-        // If we get here, it must have been some other kind of internal block. It's possible that
-        // someone prepended something to our injected block, but that's unlikely.
     }
 
     /* Push the exception address value on the stack */
