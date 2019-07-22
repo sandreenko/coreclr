@@ -4898,7 +4898,7 @@ Compiler::fgWalkResult Compiler::optVNConstantPropCurStmt(BasicBlock* block, Gen
     optAssertionProp_Update(newTree, tree, stmt);
 
     JITDUMP("After constant propagation on [%06u]:\n", tree->gtTreeID);
-    DBEXEC(VERBOSE, gtDispTree(stmt));
+    DBEXEC(VERBOSE, gtDispTree(stmt->gtStmtExpr));
 
     return WALK_SKIP_SUBTREES;
 }
@@ -5193,7 +5193,7 @@ void Compiler::optAssertionPropMain()
                 if (verbose)
                 {
                     printf("Re-morphing this stmt:\n");
-                    gtDispTree(stmt);
+                    gtDispTree(stmt->gtStmtExpr);
                     printf("\n");
                 }
 #endif

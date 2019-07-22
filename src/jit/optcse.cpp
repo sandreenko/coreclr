@@ -2381,7 +2381,7 @@ public:
                 Compiler::printTreeID(exp);
                 printf("\n");
                 printf("stm =");
-                m_pCompiler->gtDispTree(stmt);
+                m_pCompiler->gtDispTree(stmt->gtStmtExpr);
                 printf("\n");
                 printf("exp =");
                 m_pCompiler->gtDispTree(exp);

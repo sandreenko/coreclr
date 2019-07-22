@@ -6817,7 +6817,7 @@ void Compiler::fgMorphCallInlineHelper(GenTreeCall* call, InlineResult* result)
         printf("Expanding INLINE_CANDIDATE in statement ");
         printTreeID(fgMorphStmt);
         printf(" in " FMT_BB ":\n", compCurBB->bbNum);
-        gtDispTree(fgMorphStmt);
+        gtDispTree(fgMorphStmt->gtStmtExpr);
         if (call->IsImplicitTailCall())
         {
             printf("Note: candidate is implicit tail call\n");
@@ -8362,7 +8362,7 @@ GenTree* Compiler::fgMorphCall(GenTreeCall* call)
                 if (verbose)
                 {
                     printf("\nInserting assignment of a multi-reg call result to a temp:\n");
-                    gtDispTree(assgStmt);
+                    gtDispTree(assgStmt->gtStmtExpr);
                 }
                 result->gtDebugFlags |= GTF_DEBUG_NODE_MORPHED;
 #endif // DEBUG
@@ -18216,7 +18216,7 @@ public:
         if (m_compiler->verbose)
         {
             printf("LocalAddressVisitor visiting statement:\n");
-            m_compiler->gtDispTree(stmt);
+            m_compiler->gtDispTree(stmt->gtStmtExpr);
             m_stmtModified = false;
         }
 #endif // DEBUG
@@ -18247,7 +18247,7 @@ public:
             if (m_stmtModified)
             {
                 printf("LocalAddressVisitor modified statement:\n");
-                m_compiler->gtDispTree(stmt);
+                m_compiler->gtDispTree(stmt->gtStmtExpr);
             }
 
             printf("\n");
@@ -18980,7 +18980,7 @@ bool Compiler::fgMorphCombineSIMDFieldAssignments(BasicBlock* block, GenTreeStmt
         printf("\n" FMT_BB " stmt", block->bbNum);
         printTreeID(stmt);
         printf("(before)\n");
-        gtDispTree(stmt);
+        gtDispTree(stmt->gtStmtExpr);
     }
 #endif
 
@@ -19000,7 +19000,7 @@ bool Compiler::fgMorphCombineSIMDFieldAssignments(BasicBlock* block, GenTreeStmt
         printf("\nReplaced " FMT_BB " stmt", block->bbNum);
         printTreeID(stmt);
         printf("(after)\n");
-        gtDispTree(stmt);
+        gtDispTree(stmt->gtStmtExpr);
     }
 #endif
     return true;

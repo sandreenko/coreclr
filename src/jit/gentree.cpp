@@ -10973,13 +10973,7 @@ void Compiler::gtDispTree(GenTree*     tree,
         break;
 
         case GT_STMT:
-            printf("\n");
-
-            if (!topOnly)
-            {
-                gtDispChild(tree->gtStmt.gtStmtExpr, indentStack, IIArcBottom);
-            }
-            break;
+            unreached();
 
         case GT_ARR_ELEM:
             gtDispCommonEndLine(tree);
