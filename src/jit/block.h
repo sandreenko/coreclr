@@ -743,6 +743,8 @@ struct BasicBlock : private LIR::Range
 
     __declspec(property(get = getBBTreeList, put = setBBTreeList)) GenTree* bbTreeList; // the body of the block.
 
+    GenTreeStmt* bbStmtList;
+
     GenTree* getBBTreeList() const
     {
         return m_firstNode;
@@ -1080,6 +1082,7 @@ struct BasicBlock : private LIR::Range
 
     BasicBlock() : bbLiveIn(VarSetOps::UninitVal()), bbLiveOut(VarSetOps::UninitVal())
     {
+        bbStmtList = nullptr;
     }
 
     // Iteratable collection of successors of a block.
