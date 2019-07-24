@@ -9725,31 +9725,7 @@ void Compiler::gtDispNode(GenTree* tree, IndentStack* indentStack, __in __in_z _
 
             if (tree->gtOper == GT_STMT)
             {
-                if (opts.compDbgInfo)
-                {
-                    GenTreeStmt* stmt  = tree->AsStmt();
-                    IL_OFFSET    endIL = stmt->gtStmtLastILoffs;
-
-                    printf("(IL ");
-                    if (stmt->gtStmtILoffsx == BAD_IL_OFFSET)
-                    {
-                        printf("  ???");
-                    }
-                    else
-                    {
-                        printf("0x%03X", jitGetILoffs(stmt->gtStmtILoffsx));
-                    }
-                    printf("...");
-                    if (endIL == BAD_IL_OFFSET)
-                    {
-                        printf("  ???");
-                    }
-                    else
-                    {
-                        printf("0x%03X", endIL);
-                    }
-                    printf(")");
-                }
+                unreached();
             }
 
             if (tree->IsArgPlaceHolderNode() && (tree->gtArgPlace.gtArgPlaceClsHnd != nullptr))
@@ -11363,11 +11339,11 @@ void Compiler::gtDispArgList(GenTreeCall* call, IndentStack* indentStack)
 // Assumptions:
 //    'tree' must be a GT_LIST node
 
-void Compiler::gtDispTreeList(GenTree* tree, IndentStack* indentStack /* = nullptr */)
+void Compiler::gtDispStmtList(GenTreeStmt* stmts, IndentStack* indentStack /* = nullptr */)
 {
-    for (/*--*/; tree != nullptr; tree = tree->gtNext)
+    for (GenTreeStmt* stmt = stmts; stmt != nullptr; stmt = stmt->gtNextStmt)
     {
-        gtDispTree(tree, indentStack);
+        gtDispTree(stmt->gtStmtExpr, indentStack);
         printf("\n");
     }
 }
@@ -12559,7 +12535,7 @@ GenTree* Compiler::gtTryRemoveBoxUpstreamEffects(GenTree* op, BoxRemovalOptions 
             " [%06u] (assign/newobj [%06u] copy [%06u])\n",
             (options == BR_DONT_REMOVE) ? "checking if it is possible" : "attempting",
             (options == BR_MAKE_LOCAL_COPY) ? "make local unboxed version" : "remove side effects", dspTreeID(op),
-            dspTreeID(asgStmt), dspTreeID(copyStmt));
+            dspTreeID(asgStmt->gtStmtExpr), dspTreeID(copyStmt->gtStmtExpr));
 
     // If we don't recognize the form of the assign, bail.
     GenTree* asg = asgStmt->gtStmtExpr;
@@ -15381,13 +15357,9 @@ bool GenTree::IsPhiDefn()
     return res;
 }
 
-bool GenTree::IsPhiDefnStmt()
+bool GenTreeStmt::IsPhiDefnStmt()
 {
-    if (OperGet() != GT_STMT)
-    {
-        return false;
-    }
-    GenTree* asg = gtStmt.gtStmtExpr;
+    GenTree* asg = gtStmtExpr;
     return asg->IsPhiDefn();
 }
 

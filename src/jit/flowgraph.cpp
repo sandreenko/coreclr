@@ -520,7 +520,7 @@ bool Compiler::fgBlockContainsStatementBounded(BasicBlock*  block,
         return answerOnBoundExceeded;
     }
 
-    GenTree* curr = block->firstStmt();
+    GenTreeStmt* curr = block->firstStmt();
     do
     {
         (*numTraversed)++;
@@ -529,7 +529,7 @@ bool Compiler::fgBlockContainsStatementBounded(BasicBlock*  block,
             break;
         }
         curr = curr->gtNext;
-    } while (curr);
+    } while (curr != nullptr);
     return curr != nullptr;
 }
 #endif // DEBUG
@@ -656,7 +656,7 @@ GenTreeStmt* Compiler::fgInsertStmtNearEnd(BasicBlock* block, GenTreeStmt* stmt)
         noway_assert(firstStmt != nullptr);
         GenTreeStmt* lastStmt = block->lastStmt();
         noway_assert(lastStmt != nullptr && lastStmt->gtNext == nullptr);
-        GenTree* insertionPoint = lastStmt->gtPrev;
+        GenTreeStmt* insertionPoint = lastStmt->gtPrev;
 
 #if DEBUG
         if (block->bbJumpKind == BBJ_COND)
@@ -3880,7 +3880,7 @@ bool Compiler::fgCreateGCPoll(GCPollType pollType, BasicBlock* block)
         if (verbose)
         {
             printf("*** creating GC Poll in block " FMT_BB "\n", block->bbNum);
-            gtDispTreeList(block->bbStmtList);
+            gtDispStmtList(block->bbStmtList);
         }
 #endif // DEBUG
     }
@@ -4017,11 +4017,11 @@ bool Compiler::fgCreateGCPoll(GCPollType pollType, BasicBlock* block)
         if (verbose)
         {
             printf("*** creating inlined GC Poll in top block " FMT_BB "\n", top->bbNum);
-            gtDispTreeList(top->bbStmtList);
+            gtDispStmtList(top->bbStmtList);
             printf(" poll block is " FMT_BB "\n", poll->bbNum);
-            gtDispTreeList(poll->bbStmtList);
+            gtDispStmtList(poll->bbStmtList);
             printf(" bottom block is " FMT_BB "\n", bottom->bbNum);
-            gtDispTreeList(bottom->bbStmtList);
+            gtDispStmtList(bottom->bbStmtList);
         }
 #endif // DEBUG
     }
@@ -9949,9 +9949,8 @@ void Compiler::fgRemoveStmt(BasicBlock* block, GenTreeStmt* stmt)
         stmt->gtStmtExpr->gtOper != GT_NOP) // Don't print if it is a GT_NOP. Too much noise from the inliner.
     {
         printf("\nRemoving statement ");
-        printTreeID(stmt);
-        printf(" in " FMT_BB " as useless:\n", block->bbNum);
         gtDispTree(stmt->gtStmtExpr);
+        printf(" in " FMT_BB " as useless:\n", block->bbNum);
     }
 #endif // DEBUG
 
@@ -14619,21 +14618,22 @@ bool Compiler::fgOptimizeBranchToNext(BasicBlock* block, BasicBlock* bNext, Basi
         }
         else
         {
-            GenTreeStmt* cond = block->lastStmt();
-            noway_assert(cond->gtStmtExpr->gtOper == GT_JTRUE);
+            GenTreeStmt* condStmt = block->lastStmt();
+            GenTree*     cond     = condStmt->gtStmtExpr;
+            noway_assert(cond->gtOper == GT_JTRUE);
 
             /* check for SIDE_EFFECTS */
-            if (cond->gtStmtExpr->gtFlags & GTF_SIDE_EFFECT)
+            if (cond->gtFlags & GTF_SIDE_EFFECT)
             {
                 /* Extract the side effects from the conditional */
                 GenTree* sideEffList = nullptr;
 
-                gtExtractSideEffList(cond->gtStmtExpr, &sideEffList);
+                gtExtractSideEffList(cond, &sideEffList);
 
                 if (sideEffList == nullptr)
                 {
                     compCurBB = block;
-                    fgRemoveStmt(block, cond);
+                    fgRemoveStmt(block, condStmt);
                 }
                 else
                 {
@@ -14653,17 +14653,17 @@ bool Compiler::fgOptimizeBranchToNext(BasicBlock* block, BasicBlock* bNext, Basi
                     noway_assert(sideEffList->gtOper != GT_STMT);
                     noway_assert(sideEffList->gtOper != GT_JTRUE);
 
-                    cond->gtStmtExpr = sideEffList;
+                    condStmt->gtStmtExpr = sideEffList;
 
                     if (fgStmtListThreaded)
                     {
                         compCurBB = block;
 
                         /* Update ordering, costs, FP levels, etc. */
-                        gtSetStmtInfo(cond);
+                        gtSetStmtInfo(condStmt);
 
                         /* Re-link the nodes for this statement */
-                        fgSetStmtSeq(cond);
+                        fgSetStmtSeq(condStmt);
                     }
                 }
             }
@@ -14671,7 +14671,7 @@ bool Compiler::fgOptimizeBranchToNext(BasicBlock* block, BasicBlock* bNext, Basi
             {
                 compCurBB = block;
                 /* conditional has NO side effect - remove it */
-                fgRemoveStmt(block, cond);
+                fgRemoveStmt(block, condStmt);
             }
         }
 
@@ -19193,15 +19193,16 @@ unsigned Compiler::fgGetCodeEstimate(BasicBlock* block)
 
     for (GenTreeStmt* stmt = block->FirstNonPhiDef(); stmt != nullptr; stmt = stmt->getNextStmt())
     {
-        if (stmt->gtCostSz < MAX_COST)
+        unsigned char cost = stmt->gtStmtExpr->gtCostSz;
+        if (cost < MAX_COST)
         {
-            costSz += stmt->gtCostSz;
+            costSz += cost;
         }
         else
         {
             // We could walk the tree to find out the real gtCostSz,
             // but just using MAX_COST for this trees code size works OK
-            costSz += stmt->gtCostSz;
+            costSz += cost;
         }
     }
 
@@ -21029,8 +21030,6 @@ void Compiler::fgDebugCheckBBlist(bool checkBBNum /* = false */, bool checkBBRef
     if (genReturnBB != nullptr)
     {
         assert(genReturnBB->bbTreeList != nullptr || genReturnBB->bbStmtList != nullptr);
-        assert(genReturnBB->IsLIR() || genReturnBB->bbStmtList->gtOper == GT_STMT);
-        assert(genReturnBB->IsLIR() || genReturnBB->bbStmtList->gtType == TYP_VOID);
     }
 
     // The general encoder/decoder (currently) only reports "this" as a generics context as a stack location,
@@ -22854,7 +22853,7 @@ void Compiler::fgInsertInlineeBlocks(InlineInfo* pInlineInfo)
 
     noway_assert(iciBlock->bbStmtList != nullptr);
     noway_assert(iciStmt->gtStmtExpr != nullptr);
-    assert(iciBlock->Contains(iciStmt) && (iciStmt->gtStmtExpr == iciCall));
+    assert(iciStmt->gtStmtExpr == iciCall);
     noway_assert(iciCall->gtOper == GT_CALL);
 
 #ifdef DEBUG
@@ -23642,8 +23641,6 @@ void Compiler::fgInlineAppendStatements(InlineInfo* inlineInfo, BasicBlock* bloc
     InlLclVarInfo*       lclVarInfo        = inlineInfo->lclVarInfo;
     unsigned             gcRefLclCnt       = inlineInfo->numberOfGcRefLocals;
     const unsigned       argCnt            = inlineInfo->argCnt;
-
-    noway_assert(callStmt->gtOper == GT_STMT);
 
     for (unsigned lclNum = 0; lclNum < lclCnt; lclNum++)
     {

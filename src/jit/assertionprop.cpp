@@ -5168,8 +5168,8 @@ void Compiler::optAssertionPropMain()
                 }
 
                 JITDUMP("Propagating %s assertions for " FMT_BB ", stmt [%06d], tree [%06d], tree -> %d\n",
-                        BitVecOps::ToString(apTraits, assertions), block->bbNum, dspTreeID(stmt), dspTreeID(tree),
-                        tree->GetAssertionInfo().GetAssertionIndex());
+                        BitVecOps::ToString(apTraits, assertions), block->bbNum, dspTreeID(stmt->gtStmtExpr),
+                        dspTreeID(tree), tree->GetAssertionInfo().GetAssertionIndex());
 
                 GenTree* newTree = optAssertionProp(assertions, tree, stmt);
                 if (newTree)

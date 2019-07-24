@@ -6741,7 +6741,8 @@ void Compiler::fgMorphCallInline(GenTreeCall* call, InlineResult* inlineResult)
     {
         if (call->gtReturnType != TYP_VOID)
         {
-            JITDUMP("Inlining [%06u] failed, so bashing [%06u] to NOP\n", dspTreeID(call), dspTreeID(fgMorphStmt));
+            JITDUMP("Inlining [%06u] failed, so bashing [%06u] to NOP\n", dspTreeID(call),
+                    dspTreeID(fgMorphStmt->gtStmtExpr));
 
             // Detach the GT_CALL tree from the original statement by
             // hanging a "nothing" node to it. Later the "nothing" node will be removed
@@ -6815,7 +6816,7 @@ void Compiler::fgMorphCallInlineHelper(GenTreeCall* call, InlineResult* result)
     if (verbose)
     {
         printf("Expanding INLINE_CANDIDATE in statement ");
-        printTreeID(fgMorphStmt);
+        printTreeID(fgMorphStmt->gtStmtExpr);
         printf(" in " FMT_BB ":\n", compCurBB->bbNum);
         gtDispTree(fgMorphStmt->gtStmtExpr);
         if (call->IsImplicitTailCall())
@@ -18223,12 +18224,12 @@ public:
 
         WalkTree(&stmt->gtStmtExpr, nullptr);
 
-        // We could have somethinge like STMT(IND(ADDR(LCL_VAR))) so we need to escape
+        // We could have something like STMT(IND(ADDR(LCL_VAR))) so we need to escape
         // the location here. This doesn't seem to happen often, if ever. The importer
         // tends to wrap such a tree in a COMMA.
         if (TopValue(0).IsLocation())
         {
-            EscapeLocation(TopValue(0), stmt);
+            EscapeLocation(TopValue(0), nullptr);
         }
         else
         {
@@ -18600,7 +18601,7 @@ private:
         // - It can be a GT_OBJ that has a correct size, but different than the size of the LHS.
         //   The LHS size takes precedence.
         // Just take the LHS size in all cases.
-        if (user->OperIs(GT_ASG) && (indir == user->gtGetOp2()))
+        if (user != nullptr && user->OperIs(GT_ASG) && (indir == user->gtGetOp2()))
         {
             indir = user->gtGetOp1();
 
@@ -18935,9 +18936,9 @@ bool Compiler::fgMorphCombineSIMDFieldAssignments(BasicBlock* block, GenTreeStmt
     {
         printf("\nFound contiguous assignments from a SIMD vector to memory.\n");
         printf("From " FMT_BB ", stmt", block->bbNum);
-        printTreeID(stmt);
+        printTreeID(stmt->gtStmtExpr);
         printf(" to stmt");
-        printTreeID(lastStmt);
+        printTreeID(lastStmt->gtStmtExpr);
         printf("\n");
     }
 #endif
@@ -18978,7 +18979,7 @@ bool Compiler::fgMorphCombineSIMDFieldAssignments(BasicBlock* block, GenTreeStmt
     if (verbose)
     {
         printf("\n" FMT_BB " stmt", block->bbNum);
-        printTreeID(stmt);
+        printTreeID(stmt->gtStmtExpr);
         printf("(before)\n");
         gtDispTree(stmt->gtStmtExpr);
     }
@@ -18998,7 +18999,7 @@ bool Compiler::fgMorphCombineSIMDFieldAssignments(BasicBlock* block, GenTreeStmt
     if (verbose)
     {
         printf("\nReplaced " FMT_BB " stmt", block->bbNum);
-        printTreeID(stmt);
+        printTreeID(stmt->gtStmtExpr);
         printf("(after)\n");
         gtDispTree(stmt->gtStmtExpr);
     }

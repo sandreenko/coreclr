@@ -4747,8 +4747,8 @@ void Compiler::compCompile(void** methodCodePtr, ULONG* methodCodeSize, JitFlags
         {
             for (GenTreeStmt* stmt = block->firstStmt(); stmt != nullptr; stmt = stmt->getNextStmt())
             {
-                compSizeEstimate += stmt->GetCostSz();
-                compCycleEstimate += stmt->GetCostEx();
+                compSizeEstimate += stmt->gtStmtExpr->GetCostSz();
+                compCycleEstimate += stmt->gtStmtExpr->GetCostEx();
             }
         }
     }
@@ -8463,7 +8463,7 @@ GenTree* dFindTree(unsigned id)
     {
         for (GenTreeStmt* stmt = block->firstStmt(); stmt; stmt = stmt->gtNextStmt)
         {
-            tree = dFindTree(stmt, id);
+            tree = dFindTree(stmt->gtStmtExpr, id);
             if (tree != nullptr)
             {
                 dbTreeBlock = block;
@@ -8684,7 +8684,7 @@ void cBlockIR(Compiler* comp, BasicBlock* block)
 
             if (trees)
             {
-                cTree(comp, stmt);
+                cTree(comp, stmt->gtStmtExpr);
                 printf("\n");
                 printf("=====================================================================\n");
             }
@@ -8698,7 +8698,7 @@ void cBlockIR(Compiler* comp, BasicBlock* block)
             }
             else
             {
-                cTreeIR(comp, stmt);
+                cTreeIR(comp, stmt->gtStmtExpr);
             }
 
             if (!noStmts && !trees)
@@ -9372,15 +9372,6 @@ int cTreeFlagsIR(Compiler* comp, GenTree* tree)
                     }
                 }
                 break;
-
-            case GT_STMT:
-
-                if (tree->gtFlags & GTF_STMT_CMPADD)
-                {
-                    chars += printf("[STMT_CMPADD]");
-                }
-                break;
-
             default:
 
             {

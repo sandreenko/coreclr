@@ -2376,7 +2376,7 @@ public:
             if (link == nullptr)
             {
                 printf("\ngtFindLink failed: stm=");
-                Compiler::printTreeID(stmt);
+                Compiler::printTreeID(stmt->gtStmtExpr);
                 printf(", exp=");
                 Compiler::printTreeID(exp);
                 printf("\n");
