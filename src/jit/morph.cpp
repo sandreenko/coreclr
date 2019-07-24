@@ -14813,7 +14813,6 @@ GenTree* Compiler::fgMorphToEmulatedFP(GenTree* tree)
 GenTree* Compiler::fgMorphTree(GenTree* tree, MorphAddrContext* mac)
 {
     assert(tree);
-    assert(tree->gtOper != GT_STMT);
 
 #ifdef DEBUG
     if (verbose)

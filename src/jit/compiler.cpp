@@ -10283,24 +10283,6 @@ void cNodeIR(Compiler* comp, GenTree* tree)
             return;
         }
     }
-    else if (op == GT_STMT)
-    {
-        if (noStmts)
-        {
-            if (dataflowView)
-            {
-                child = tree->GetChild(0);
-                if (child->gtOper != GT_COMMA)
-                {
-                    return;
-                }
-            }
-            else
-            {
-                return;
-            }
-        }
-    }
     else if (op == GT_COMMA)
     {
         if (dataflowView)
