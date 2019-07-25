@@ -4913,38 +4913,10 @@ struct Statement
     IL_OFFSET gtStmtLastILoffs; // instr offset at end of stmt
 #endif
 
-    __declspec(property(get = getNextStmt)) Statement* gtNextStmt;
-
-    __declspec(property(get = getPrevStmt)) Statement* gtPrevStmt;
-
-    Statement* gtNext;
-    Statement* gtPrev;
+    Statement* nextStmt;
+    Statement* prevStmt;
 
     bool compilerAdded;
-
-    Statement* getNextStmt()
-    {
-        if (gtNext == nullptr)
-        {
-            return nullptr;
-        }
-        else
-        {
-            return gtNext;
-        }
-    }
-
-    Statement* getPrevStmt()
-    {
-        if (gtPrev == nullptr)
-        {
-            return nullptr;
-        }
-        else
-        {
-            return gtPrev;
-        }
-    }
 
     Statement(GenTree* expr, IL_OFFSETX offset)
         : gtStmtExpr(expr)
@@ -4954,8 +4926,8 @@ struct Statement
 #ifdef DEBUG
         , gtStmtLastILoffs(BAD_IL_OFFSET)
 #endif
-        , gtNext(nullptr)
-        , gtPrev(nullptr)
+        , nextStmt(nullptr)
+        , prevStmt(nullptr)
         , compilerAdded(false)
     {
     }
@@ -4967,8 +4939,8 @@ struct Statement
         , gtInlineContext(nullptr)
         , gtStmtILoffsx(BAD_IL_OFFSET)
         , gtStmtLastILoffs(BAD_IL_OFFSET)
-        , gtNext(nullptr)
-        , gtPrev(nullptr)
+        , nextStmt(nullptr)
+        , prevStmt(nullptr)
     {
     }
 #endif

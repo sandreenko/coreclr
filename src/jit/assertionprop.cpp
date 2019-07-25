@@ -4516,14 +4516,14 @@ ASSERT_TP* Compiler::optComputeAssertionGen()
         GenTree*  jtrue    = nullptr;
 
         // Walk the statement trees in this basic block.
-        for (Statement* stmt = block->firstStmt(); stmt != nullptr; stmt = stmt->getNextStmt())
+        for (Statement* stmt = block->firstStmt(); stmt != nullptr; stmt = stmt->nextStmt)
         {
             for (GenTree* tree = stmt->gtStmtList; tree != nullptr; tree = tree->gtNext)
             {
                 if (tree->gtOper == GT_JTRUE)
                 {
                     // A GT_TRUE is always the last node in a tree, so we can break here
-                    assert((tree->gtNext == nullptr) && (stmt->gtNext == nullptr));
+                    assert((tree->gtNext == nullptr) && (stmt->nextStmt == nullptr));
                     jtrue = tree;
                     break;
                 }
@@ -4987,7 +4987,7 @@ Statement* Compiler::optVNAssertionPropCurStmt(BasicBlock* block, Statement* stm
     }
 
     // Preserve the prev link before the propagation and morph.
-    Statement* prev = (stmt == block->firstStmt()) ? nullptr : stmt->getPrevStmt();
+    Statement* prev = (stmt == block->firstStmt()) ? nullptr : stmt->prevStmt;
 
     // Perform VN based assertion prop first, in case we don't find
     // anything in assertion gen.
@@ -5003,7 +5003,7 @@ Statement* Compiler::optVNAssertionPropCurStmt(BasicBlock* block, Statement* stm
 
     // Check if propagation removed statements starting from current stmt.
     // If so, advance to the next good statement.
-    Statement* nextStmt = (prev == nullptr) ? block->firstStmt() : prev->getNextStmt();
+    Statement* nextStmt = (prev == nullptr) ? block->firstStmt() : prev->nextStmt;
     return nextStmt;
 }
 
@@ -5045,7 +5045,7 @@ void Compiler::optAssertionPropMain()
             if (fgRemoveRestOfBlock)
             {
                 fgRemoveStmt(block, stmt);
-                stmt = stmt->getNextStmt();
+                stmt = stmt->nextStmt;
                 continue;
             }
             else
@@ -5056,7 +5056,7 @@ void Compiler::optAssertionPropMain()
                 // Propagation resulted in removal of the remaining stmts, perform it.
                 if (fgRemoveRestOfBlock)
                 {
-                    stmt = stmt->getNextStmt();
+                    stmt = stmt->nextStmt;
                     continue;
                 }
 
@@ -5075,7 +5075,7 @@ void Compiler::optAssertionPropMain()
             }
 
             // Advance the iterator
-            stmt = stmt->getNextStmt();
+            stmt = stmt->nextStmt;
         }
     }
 
@@ -5148,13 +5148,13 @@ void Compiler::optAssertionPropMain()
             if (fgRemoveRestOfBlock)
             {
                 fgRemoveStmt(block, stmt);
-                stmt = stmt->getNextStmt();
+                stmt = stmt->nextStmt;
                 continue;
             }
 
             // Preserve the prev link before the propagation and morph, to check if propagation
             // removes the current stmt.
-            Statement* prevStmt = (stmt == block->firstStmt()) ? nullptr : stmt->getPrevStmt();
+            Statement* prevStmt = (stmt == block->firstStmt()) ? nullptr : stmt->prevStmt;
 
             optAssertionPropagatedCurrentStmt = false; // set to true if a assertion propagation took place
                                                        // and thus we must morph, set order, re-link
@@ -5163,7 +5163,7 @@ void Compiler::optAssertionPropMain()
                 if (tree->OperIs(GT_JTRUE))
                 {
                     // A GT_TRUE is always the last node in a tree, so we can break here
-                    assert((tree->gtNext == nullptr) && (stmt->gtNext == nullptr));
+                    assert((tree->gtNext == nullptr) && (stmt->nextStmt == nullptr));
                     break;
                 }
 
@@ -5203,8 +5203,8 @@ void Compiler::optAssertionPropMain()
 
             // Check if propagation removed statements starting from current stmt.
             // If so, advance to the next good statement.
-            Statement* nextStmt = (prevStmt == nullptr) ? block->firstStmt() : prevStmt->getNextStmt();
-            stmt                = (stmt == nextStmt) ? stmt->getNextStmt() : nextStmt;
+            Statement* nextStmt = (prevStmt == nullptr) ? block->firstStmt() : prevStmt->nextStmt;
+            stmt                = (stmt == nextStmt) ? stmt->nextStmt : nextStmt;
         }
         optAssertionPropagatedCurrentStmt = false; // clear it back as we are done with stmts.
     }

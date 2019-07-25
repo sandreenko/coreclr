@@ -240,7 +240,7 @@ void Rationalizer::SanityCheck()
     BasicBlock* block;
     foreach_block(comp, block)
     {
-        for (Statement* statement = block->firstStmt(); statement != nullptr; statement = statement->getNextStmt())
+        for (Statement* statement = block->firstStmt(); statement != nullptr; statement = statement->nextStmt)
         {
             ValidateStatement(statement, block);
 
@@ -939,7 +939,7 @@ void Rationalizer::DoPhase()
             continue;
         }
 
-        for (Statement* statement = firstStatement; statement != nullptr; statement = statement->getNextStmt())
+        for (Statement* statement = firstStatement; statement != nullptr; statement = statement->nextStmt)
         {
             assert(statement->gtStmtList != nullptr);
             assert(statement->gtStmtList->gtPrev == nullptr);

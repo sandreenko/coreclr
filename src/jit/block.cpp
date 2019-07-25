@@ -631,7 +631,7 @@ bool BasicBlock::CloneBlockState(
     to->bbTgtStkDepth = from->bbTgtStkDepth;
 #endif // DEBUG
 
-    for (Statement* fromStmt = from->firstStmt(); fromStmt != nullptr; fromStmt = fromStmt->getNextStmt())
+    for (Statement* fromStmt = from->firstStmt(); fromStmt != nullptr; fromStmt = fromStmt->nextStmt)
     {
         auto newExpr = compiler->gtCloneExpr(fromStmt->gtStmtExpr, 0, varNum, varVal);
         if (!newExpr)
@@ -695,8 +695,8 @@ Statement* BasicBlock::lastStmt() const
         return nullptr;
     }
 
-    Statement* result = bbStmtList->gtPrevStmt;
-    assert(result != nullptr && result->gtNext == nullptr);
+    Statement* result = bbStmtList->prevStmt;
+    assert(result != nullptr && result->nextStmt == nullptr);
     return result;
 }
 
@@ -813,7 +813,7 @@ Statement* BasicBlock::FirstNonPhiDef()
     while ((tree->OperGet() == GT_ASG && tree->gtOp.gtOp2->OperGet() == GT_PHI) ||
            (tree->OperGet() == GT_STORE_LCL_VAR && tree->gtOp.gtOp1->OperGet() == GT_PHI))
     {
-        stmt = stmt->getNextStmt();
+        stmt = stmt->nextStmt;
         if (stmt == nullptr)
         {
             return nullptr;
@@ -834,7 +834,7 @@ Statement* BasicBlock::FirstNonPhiDefOrCatchArgAsg()
     if ((tree->OperGet() == GT_ASG && tree->gtOp.gtOp2->OperGet() == GT_CATCH_ARG) ||
         (tree->OperGet() == GT_STORE_LCL_VAR && tree->gtOp.gtOp1->OperGet() == GT_CATCH_ARG))
     {
-        stmt = stmt->getNextStmt();
+        stmt = stmt->nextStmt;
     }
     return stmt;
 }

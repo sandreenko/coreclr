@@ -5753,7 +5753,7 @@ void Compiler::fgValueNumber()
         for (BasicBlock* blk = fgFirstBB; blk != nullptr; blk = blk->bbNext)
         {
             // Now iterate over the block's statements, and their trees.
-            for (Statement* stmt = blk->FirstNonPhiDef(); stmt != nullptr; stmt = stmt->getNextStmt())
+            for (Statement* stmt = blk->FirstNonPhiDef(); stmt != nullptr; stmt = stmt->nextStmt)
             {
                 for (GenTree* tree = stmt->gtStmtList; tree != nullptr; tree = tree->gtNext)
                 {
@@ -5919,7 +5919,7 @@ void Compiler::fgValueNumberBlock(BasicBlock* blk)
     // First: visit phi's.  If "newVNForPhis", give them new VN's.  If not,
     // first check to see if all phi args have the same value.
     Statement* firstNonPhi = blk->FirstNonPhiDef();
-    for (Statement* phiDefStmt = blk->firstStmt(); phiDefStmt != firstNonPhi; phiDefStmt = phiDefStmt->getNextStmt())
+    for (Statement* phiDefStmt = blk->firstStmt(); phiDefStmt != firstNonPhi; phiDefStmt = phiDefStmt->nextStmt)
     {
         // TODO-Cleanup: It has been proposed that we should have an IsPhiDef predicate.  We would use it
         // in Block::FirstNonPhiDef as well.
@@ -6126,7 +6126,7 @@ void Compiler::fgValueNumberBlock(BasicBlock* blk)
     }
 
     // Now iterate over the remaining statements, and their trees.
-    for (Statement* stmt = firstNonPhi; stmt != nullptr; stmt = stmt->getNextStmt())
+    for (Statement* stmt = firstNonPhi; stmt != nullptr; stmt = stmt->nextStmt)
     {
 #ifdef DEBUG
         compCurStmtNum++;
@@ -6149,7 +6149,7 @@ void Compiler::fgValueNumberBlock(BasicBlock* blk)
             printf("\n***** " FMT_BB ", stmt %d (after)\n", blk->bbNum, compCurStmtNum);
             gtDispTree(stmt->gtStmtExpr);
             printf("\n");
-            if (stmt->gtNext)
+            if (stmt->nextStmt)
             {
                 printf("---------\n");
             }
