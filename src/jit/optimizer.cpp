@@ -939,7 +939,7 @@ bool Compiler::optComputeIterInfo(GenTree* incr, BasicBlock* from, BasicBlock* t
 //      This method just retrieves what it thinks is the "test" node,
 //      the callers are expected to verify that "iterVar" is used in the test.
 //
-bool Compiler::optIsLoopTestEvalIntoTemp(GenTreeStmt* testStmt, GenTreeStmt** newTestStmt)
+bool Compiler::optIsLoopTestEvalIntoTemp(Statement* testStmt, Statement** newTestStmt)
 {
     GenTree* test = testStmt->gtStmtExpr;
 
@@ -960,7 +960,7 @@ bool Compiler::optIsLoopTestEvalIntoTemp(GenTreeStmt* testStmt, GenTreeStmt** ne
     {
         // Get the previous statement to get the def (rhs) of Vtmp to see
         // if the "test" is evaluated into Vtmp.
-        GenTreeStmt* prevStmt = testStmt->getPrevStmt();
+        Statement* prevStmt = testStmt->getPrevStmt();
         if (prevStmt == nullptr)
         {
             return false;
@@ -1031,10 +1031,10 @@ bool Compiler::optExtractInitTestIncr(
     // Check if last two statements in the loop body are the increment of the iterator
     // and the loop termination test.
     noway_assert(bottom->bbStmtList != nullptr);
-    GenTreeStmt* testStmt = bottom->lastStmt();
+    Statement* testStmt = bottom->lastStmt();
     noway_assert(testStmt != nullptr && testStmt->gtNext == nullptr);
 
-    GenTreeStmt* newTestStmt;
+    Statement* newTestStmt;
     if (optIsLoopTestEvalIntoTemp(testStmt, &newTestStmt))
     {
         testStmt = newTestStmt;
@@ -1042,7 +1042,7 @@ bool Compiler::optExtractInitTestIncr(
 
     // Check if we have the incr stmt before the test stmt, if we don't,
     // check if incr is part of the loop "top".
-    GenTreeStmt* incrStmt = testStmt->getPrevStmt();
+    Statement* incrStmt = testStmt->getPrevStmt();
     if (incrStmt == nullptr || optIsLoopIncrTree(incrStmt->gtStmtExpr) == BAD_VAR_NUM)
     {
         if (top == nullptr || top->bbStmtList == nullptr || top->bbStmtList->gtPrev == nullptr)
@@ -1051,7 +1051,7 @@ bool Compiler::optExtractInitTestIncr(
         }
 
         // If the prev stmt to loop test is not incr, then check if we have loop test evaluated into a tmp.
-        GenTreeStmt* toplastStmt = top->lastStmt();
+        Statement* toplastStmt = top->lastStmt();
         if (optIsLoopIncrTree(toplastStmt->gtStmtExpr) != BAD_VAR_NUM)
         {
             incrStmt = toplastStmt;
@@ -1066,13 +1066,13 @@ bool Compiler::optExtractInitTestIncr(
 
     // Find the last statement in the loop pre-header which we expect to be the initialization of
     // the loop iterator.
-    GenTreeStmt* phdrStmt = head->firstStmt();
+    Statement* phdrStmt = head->firstStmt();
     if (phdrStmt == nullptr)
     {
         return false;
     }
 
-    GenTreeStmt* initStmt = phdrStmt->getPrevStmt();
+    Statement* initStmt = phdrStmt->getPrevStmt();
     noway_assert(initStmt != nullptr && (initStmt->gtNext == nullptr));
 
     // If it is a duplicated loop condition, skip it.
@@ -1302,7 +1302,7 @@ bool Compiler::optRecordLoop(BasicBlock*   head,
             do
             {
                 block = block->bbNext;
-                for (GenTreeStmt* stmt = block->firstStmt(); stmt != nullptr; stmt = stmt->gtNextStmt)
+                for (Statement* stmt = block->firstStmt(); stmt != nullptr; stmt = stmt->gtNextStmt)
                 {
                     if (stmt->gtStmtExpr == incr)
                     {
@@ -3606,15 +3606,15 @@ void Compiler::optUnrollLoops()
 
         // Locate/initialize the increment/test statements.
 
-        GenTreeStmt* loopStmt = bottom->firstStmt();
+        Statement* loopStmt = bottom->firstStmt();
         noway_assert(loopStmt != nullptr);
 
-        GenTreeStmt* initStmt = head->lastStmt();
+        Statement* initStmt = head->lastStmt();
         noway_assert((initStmt != nullptr) && (initStmt->gtNext == nullptr));
 
-        GenTreeStmt* testStmt = bottom->lastStmt();
+        Statement* testStmt = bottom->lastStmt();
         noway_assert((testStmt != nullptr) && (testStmt->gtNext == nullptr));
-        GenTreeStmt* incrStmt = testStmt->gtPrevStmt;
+        Statement* incrStmt = testStmt->gtPrevStmt;
         noway_assert(incrStmt != nullptr);
 
         if (initStmt->compilerAdded)
@@ -3696,7 +3696,7 @@ void Compiler::optUnrollLoops()
 
                 // Visit all the statements in the loop.
 
-                for (GenTreeStmt* stmt = loopStmt; stmt != nullptr; stmt = stmt->gtNextStmt)
+                for (Statement* stmt = loopStmt; stmt != nullptr; stmt = stmt->gtNextStmt)
                 {
                     /* Calculate gtCostSz */
                     gtSetStmtInfo(stmt);
@@ -3782,8 +3782,8 @@ void Compiler::optUnrollLoops()
                     {
                         // Remove the test; we're doing a full unroll.
 
-                        GenTreeStmt* testCopyStmt = newBlock->lastStmt();
-                        GenTree*     testCopyExpr = testCopyStmt->gtStmtExpr;
+                        Statement* testCopyStmt = newBlock->lastStmt();
+                        GenTree*   testCopyExpr = testCopyStmt->gtStmtExpr;
                         assert(testCopyExpr->gtOper == GT_JTRUE);
                         GenTree* sideEffList = nullptr;
                         gtExtractSideEffList(testCopyExpr, &sideEffList, GTF_SIDE_EFFECT | GTF_ORDER_SIDEEFF);
@@ -3854,7 +3854,7 @@ void Compiler::optUnrollLoops()
 
             if (head->bbJumpKind == BBJ_COND)
             {
-                GenTreeStmt* preHeaderStmt = head->firstStmt();
+                Statement* preHeaderStmt = head->firstStmt();
                 noway_assert(preHeaderStmt != nullptr);
                 testStmt = preHeaderStmt->gtPrevStmt;
 
@@ -4009,13 +4009,13 @@ bool Compiler::optReachWithoutCall(BasicBlock* topBB, BasicBlock* botBB)
  * Find the loop termination test at the bottom of the loop
  */
 
-static GenTreeStmt* optFindLoopTermTest(BasicBlock* bottom)
+static Statement* optFindLoopTermTest(BasicBlock* bottom)
 {
-    GenTreeStmt* testStmt = bottom->firstStmt();
+    Statement* testStmt = bottom->firstStmt();
 
     assert(testStmt != nullptr);
 
-    GenTreeStmt* result = testStmt->getPrevStmt();
+    Statement* result = testStmt->getPrevStmt();
 
 #ifdef DEBUG
     while (testStmt->gtNext != nullptr)
@@ -4117,7 +4117,7 @@ void Compiler::fgOptWhileLoop(BasicBlock* block)
         return;
     }
 
-    GenTreeStmt* condStmt = optFindLoopTermTest(bTest);
+    Statement* condStmt = optFindLoopTermTest(bTest);
 
     // bTest must only contain only a jtrue with no other stmts, we will only clone
     // the conditional, so any other statements will not get cloned
@@ -4250,7 +4250,7 @@ void Compiler::fgOptWhileLoop(BasicBlock* block)
     /* Create a statement entry out of the condition and
        append the condition test at the end of 'block' */
 
-    GenTreeStmt* copyOfCondStmt = fgInsertTreeAtEnd(block, condTree);
+    Statement* copyOfCondStmt = fgInsertTreeAtEnd(block, condTree);
 
     copyOfCondStmt->compilerAdded = true;
 
@@ -4870,14 +4870,14 @@ bool Compiler::optComputeDerefConditions(unsigned loopNum, LoopCloneContext* con
 //      block        - the block in which the helper call needs to be inserted.
 //      insertBefore - the stmt before which the helper call will be inserted.
 //
-void Compiler::optDebugLogLoopCloning(BasicBlock* block, GenTreeStmt* insertBefore)
+void Compiler::optDebugLogLoopCloning(BasicBlock* block, Statement* insertBefore)
 {
     if (JitConfig.JitDebugLogLoopCloning() == 0)
     {
         return;
     }
-    GenTree*     logCall = gtNewHelperCallNode(CORINFO_HELP_DEBUG_LOG_LOOP_CLONING, TYP_VOID);
-    GenTreeStmt* stmt    = fgNewStmtFromTree(logCall);
+    GenTree*   logCall = gtNewHelperCallNode(CORINFO_HELP_DEBUG_LOG_LOOP_CLONING, TYP_VOID);
+    Statement* stmt    = fgNewStmtFromTree(logCall);
     fgInsertStmtBefore(block, insertBefore, stmt);
     fgMorphBlockStmt(block, stmt DEBUGARG("Debug log loop cloning"));
 }
@@ -6022,7 +6022,7 @@ bool Compiler::optIsVarAssigned(BasicBlock* beg, BasicBlock* end, GenTree* skip,
     {
         noway_assert(beg != nullptr);
 
-        for (GenTreeStmt* stmt = beg->firstStmt(); stmt != nullptr; stmt = stmt->gtNextStmt)
+        for (Statement* stmt = beg->firstStmt(); stmt != nullptr; stmt = stmt->gtNextStmt)
         {
             if (fgWalkTreePre(&stmt->gtStmtExpr, optIsVarAssgCB, &desc))
             {
@@ -6086,7 +6086,7 @@ int Compiler::optIsSetAssgLoop(unsigned lnum, ALLVARSET_VALARG_TP vars, varRefKi
         {
             noway_assert(beg);
 
-            for (GenTreeStmt* stmt = beg->FirstNonPhiDef(); stmt != nullptr; stmt = stmt->gtNextStmt)
+            for (Statement* stmt = beg->FirstNonPhiDef(); stmt != nullptr; stmt = stmt->gtNextStmt)
             {
                 fgWalkTreePre(&stmt->gtStmtExpr, optIsVarAssgCB, &desc);
 
@@ -6219,18 +6219,18 @@ void Compiler::optPerformHoistExpr(GenTree* origExpr, unsigned lnum)
     compCurBB = preHead;
     hoist     = fgMorphTree(hoist);
 
-    GenTreeStmt* hoistStmt   = gtNewStmt(hoist);
+    Statement* hoistStmt     = gtNewStmt(hoist);
     hoistStmt->compilerAdded = true;
 
     /* simply append the statement at the end of the preHead's list */
 
-    GenTreeStmt* firstStmt = preHead->firstStmt();
+    Statement* firstStmt = preHead->firstStmt();
 
     if (firstStmt != nullptr)
     {
         /* append after last statement */
 
-        GenTreeStmt* lastStmt = preHead->lastStmt();
+        Statement* lastStmt = preHead->lastStmt();
         assert(lastStmt->gtNext == nullptr);
 
         lastStmt->gtNext  = hoistStmt;
@@ -6680,7 +6680,7 @@ void Compiler::optHoistLoopExprsForBlock(BasicBlock* blk, unsigned lnum, LoopHoi
         return;
     }
 
-    for (GenTreeStmt* stmt = blk->FirstNonPhiDef(); stmt != nullptr; stmt = stmt->getNextStmt())
+    for (Statement* stmt = blk->FirstNonPhiDef(); stmt != nullptr; stmt = stmt->getNextStmt())
     {
         GenTree* stmtTree = stmt->gtStmtExpr;
         bool     hoistable;
@@ -7328,7 +7328,7 @@ void Compiler::fgCreateLoopPreHeader(unsigned lnum)
     // into the phi via the loop header block will now flow through the preheader
     // block from the header block.
 
-    for (GenTreeStmt* stmt = top->firstStmt(); stmt != nullptr; stmt = stmt->getNextStmt())
+    for (Statement* stmt = top->firstStmt(); stmt != nullptr; stmt = stmt->getNextStmt())
     {
         GenTree* tree = stmt->gtStmtExpr;
         if (tree->OperGet() != GT_ASG)
@@ -7570,7 +7570,7 @@ void Compiler::optComputeLoopSideEffectsOfBlock(BasicBlock* blk)
     MemoryKindSet memoryHavoc = emptyMemoryKindSet;
 
     // Now iterate over the remaining statements, and their trees.
-    for (GenTreeStmt* stmt = blk->FirstNonPhiDef(); stmt != nullptr; stmt = stmt->getNextStmt())
+    for (Statement* stmt = blk->FirstNonPhiDef(); stmt != nullptr; stmt = stmt->getNextStmt())
     {
         for (GenTree* tree = stmt->gtStmtList; tree != nullptr; tree = tree->gtNext)
         {
@@ -7893,7 +7893,7 @@ void Compiler::AddModifiedElemTypeAllContainingLoops(unsigned lnum, CORINFO_CLAS
 //    tree   -  Range check tree
 //    stmt   -  Statement the tree belongs to
 
-void Compiler::optRemoveRangeCheck(GenTree* tree, GenTreeStmt* stmt)
+void Compiler::optRemoveRangeCheck(GenTree* tree, Statement* stmt)
 {
 #if !REARRANGE_ADDS
     noway_assert(!"can't remove range checks without REARRANGE_ADDS right now");
@@ -8103,7 +8103,7 @@ bool Compiler::optIdentifyLoopOptInfo(unsigned loopNum, LoopCloneContext* contex
     for (BasicBlock* block = beg; block != end->bbNext; block = block->bbNext)
     {
         compCurBB = block;
-        for (GenTreeStmt* stmt = block->firstStmt(); stmt != nullptr; stmt = stmt->getNextStmt())
+        for (Statement* stmt = block->firstStmt(); stmt != nullptr; stmt = stmt->getNextStmt())
         {
             info.stmt               = stmt;
             const bool lclVarsOnly  = false;
@@ -8782,7 +8782,7 @@ void Compiler::optOptimizeBools()
 
             /* The second block must contain a single statement */
 
-            GenTreeStmt* s2 = b2->firstStmt();
+            Statement* s2 = b2->firstStmt();
             if (s2->gtPrev != s2)
             {
                 continue;
@@ -8793,7 +8793,7 @@ void Compiler::optOptimizeBools()
 
             /* Find the condition for the first block */
 
-            GenTreeStmt* s1 = b1->lastStmt();
+            Statement* s1 = b1->lastStmt();
 
             GenTree* t1 = s1->gtStmtExpr;
             noway_assert(t1->gtOper == GT_JTRUE);

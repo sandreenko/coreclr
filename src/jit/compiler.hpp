@@ -859,7 +859,7 @@ const char* genES2str(BitVecTraits* traits, EXPSET_TP set);
 const char* refCntWtd2str(unsigned refCntWtd);
 #endif
 
-void* GenTreeStmt::operator new(size_t sz, class Compiler* compiler)
+void* Statement::operator new(size_t sz, class Compiler* compiler)
 {
     return compiler->getAllocator(CMK_ASTNode).allocate<char>(sz);
 }
@@ -947,9 +947,9 @@ inline GenTree::GenTree(genTreeOps oper, var_types type DEBUGARG(bool largeNode)
 
 /*****************************************************************************/
 
-inline GenTreeStmt* Compiler::gtNewStmt(GenTree* expr, IL_OFFSETX offset)
+inline Statement* Compiler::gtNewStmt(GenTree* expr, IL_OFFSETX offset)
 {
-    GenTreeStmt* stmt = new (this) GenTreeStmt(expr, offset);
+    Statement* stmt = new (this) Statement(expr, offset);
     return stmt;
 }
 
@@ -1316,7 +1316,7 @@ inline GenTree* Compiler::gtUnusedValNode(GenTree* expr)
  * operands
  */
 
-inline void Compiler::gtSetStmtInfo(GenTreeStmt* stmt)
+inline void Compiler::gtSetStmtInfo(Statement* stmt)
 {
     GenTree* expr = stmt->gtStmtExpr;
 
@@ -1843,7 +1843,7 @@ inline void LclVarDsc::incRefCnts(BasicBlock::weight_t weight, Compiler* comp, R
  *  referenced in a statement.
  */
 
-inline VARSET_VALRET_TP Compiler::lvaStmtLclMask(GenTreeStmt* stmt)
+inline VARSET_VALRET_TP Compiler::lvaStmtLclMask(Statement* stmt)
 {
     unsigned   varNum;
     LclVarDsc* varDsc;

@@ -277,8 +277,8 @@ void Compiler::optAddCopies()
             continue;
         }
 
-        GenTreeStmt* stmt;
-        unsigned     copyLclNum = lvaGrabTemp(false DEBUGARG("optAddCopies"));
+        Statement* stmt;
+        unsigned   copyLclNum = lvaGrabTemp(false DEBUGARG("optAddCopies"));
 
         // Because lvaGrabTemp may have reallocated the lvaTable, ensure varDsc
         // is still in sync with lvaTable[lclNum];
@@ -2595,7 +2595,7 @@ GenTree* Compiler::optVNConstantPropOnTree(BasicBlock* block, GenTree* tree)
  */
 GenTree* Compiler::optConstantAssertionProp(AssertionDsc* curAssertion,
                                             GenTree*      tree,
-                                            GenTreeStmt* stmt DEBUGARG(AssertionIndex index))
+                                            Statement* stmt DEBUGARG(AssertionIndex index))
 {
     unsigned lclNum = tree->gtLclVarCommon.gtLclNum;
 
@@ -2784,7 +2784,7 @@ bool Compiler::optAssertionProp_LclVarTypeCheck(GenTree* tree, LclVarDsc* lclVar
  */
 GenTree* Compiler::optCopyAssertionProp(AssertionDsc* curAssertion,
                                         GenTree*      tree,
-                                        GenTreeStmt* stmt DEBUGARG(AssertionIndex index))
+                                        Statement* stmt DEBUGARG(AssertionIndex index))
 {
     const AssertionDsc::AssertionDscOp1& op1 = curAssertion->op1;
     const AssertionDsc::AssertionDscOp2& op2 = curAssertion->op2;
@@ -2853,7 +2853,7 @@ GenTree* Compiler::optCopyAssertionProp(AssertionDsc* curAssertion,
  *  be nullptr. Returns the modified tree, or nullptr if no assertion prop took place.
  */
 
-GenTree* Compiler::optAssertionProp_LclVar(ASSERT_VALARG_TP assertions, GenTree* tree, GenTreeStmt* stmt)
+GenTree* Compiler::optAssertionProp_LclVar(ASSERT_VALARG_TP assertions, GenTree* tree, Statement* stmt)
 {
     assert(tree->gtOper == GT_LCL_VAR);
     // If we have a var definition then bail or
@@ -3050,7 +3050,7 @@ AssertionIndex Compiler::optGlobalAssertionIsEqualOrNotEqualZero(ASSERT_VALARG_T
  *  Returns the modified tree, or nullptr if no assertion prop took place
  */
 
-GenTree* Compiler::optAssertionProp_RelOp(ASSERT_VALARG_TP assertions, GenTree* tree, GenTreeStmt* stmt)
+GenTree* Compiler::optAssertionProp_RelOp(ASSERT_VALARG_TP assertions, GenTree* tree, Statement* stmt)
 {
     assert(tree->OperKind() & GTK_RELOP);
 
@@ -3079,7 +3079,7 @@ GenTree* Compiler::optAssertionProp_RelOp(ASSERT_VALARG_TP assertions, GenTree* 
  *  perform Value numbering based relop assertion propagation on the tree.
  *
  */
-GenTree* Compiler::optAssertionPropGlobal_RelOp(ASSERT_VALARG_TP assertions, GenTree* tree, GenTreeStmt* stmt)
+GenTree* Compiler::optAssertionPropGlobal_RelOp(ASSERT_VALARG_TP assertions, GenTree* tree, Statement* stmt)
 {
     GenTree* newTree = tree;
     GenTree* op1     = tree->gtOp.gtOp1;
@@ -3299,7 +3299,7 @@ GenTree* Compiler::optAssertionPropGlobal_RelOp(ASSERT_VALARG_TP assertions, Gen
  *  perform local variable name based relop assertion propagation on the tree.
  *
  */
-GenTree* Compiler::optAssertionPropLocal_RelOp(ASSERT_VALARG_TP assertions, GenTree* tree, GenTreeStmt* stmt)
+GenTree* Compiler::optAssertionPropLocal_RelOp(ASSERT_VALARG_TP assertions, GenTree* tree, Statement* stmt)
 {
     assert(tree->OperGet() == GT_EQ || tree->OperGet() == GT_NE);
 
@@ -3393,7 +3393,7 @@ GenTree* Compiler::optAssertionPropLocal_RelOp(ASSERT_VALARG_TP assertions, GenT
  *
  *  Returns the modified tree, or nullptr if no assertion prop took place.
  */
-GenTree* Compiler::optAssertionProp_Cast(ASSERT_VALARG_TP assertions, GenTree* tree, GenTreeStmt* stmt)
+GenTree* Compiler::optAssertionProp_Cast(ASSERT_VALARG_TP assertions, GenTree* tree, Statement* stmt)
 {
     assert(tree->gtOper == GT_CAST);
 
@@ -3497,7 +3497,7 @@ GenTree* Compiler::optAssertionProp_Cast(ASSERT_VALARG_TP assertions, GenTree* t
  *  Given a tree with an array bounds check node, eliminate it because it was
  *  checked already in the program.
  */
-GenTree* Compiler::optAssertionProp_Comma(ASSERT_VALARG_TP assertions, GenTree* tree, GenTreeStmt* stmt)
+GenTree* Compiler::optAssertionProp_Comma(ASSERT_VALARG_TP assertions, GenTree* tree, Statement* stmt)
 {
     // Remove the bounds check as part of the GT_COMMA node since we need parent pointer to remove nodes.
     // When processing visits the bounds check, it sets the throw kind to None if the check is redundant.
@@ -3520,7 +3520,7 @@ GenTree* Compiler::optAssertionProp_Comma(ASSERT_VALARG_TP assertions, GenTree* 
  *
  */
 
-GenTree* Compiler::optAssertionProp_Ind(ASSERT_VALARG_TP assertions, GenTree* tree, GenTreeStmt* stmt)
+GenTree* Compiler::optAssertionProp_Ind(ASSERT_VALARG_TP assertions, GenTree* tree, Statement* stmt)
 {
     assert(tree->OperIsIndir());
 
@@ -3712,7 +3712,7 @@ GenTree* Compiler::optNonNullAssertionProp_Call(ASSERT_VALARG_TP assertions, Gen
  *
  */
 
-GenTree* Compiler::optAssertionProp_Call(ASSERT_VALARG_TP assertions, GenTreeCall* call, GenTreeStmt* stmt)
+GenTree* Compiler::optAssertionProp_Call(ASSERT_VALARG_TP assertions, GenTreeCall* call, Statement* stmt)
 {
     if (optNonNullAssertionProp_Call(assertions, call))
     {
@@ -3904,7 +3904,7 @@ GenTree* Compiler::optAssertionProp_BndsChk(ASSERT_VALARG_TP assertions, GenTree
  *
  */
 
-GenTree* Compiler::optAssertionProp_Update(GenTree* newTree, GenTree* tree, GenTreeStmt* stmt)
+GenTree* Compiler::optAssertionProp_Update(GenTree* newTree, GenTree* tree, Statement* stmt)
 {
     assert(newTree != nullptr);
     assert(tree != nullptr);
@@ -3964,7 +3964,7 @@ GenTree* Compiler::optAssertionProp_Update(GenTree* newTree, GenTree* tree, GenT
  *  Returns the modified tree, or nullptr if no assertion prop took place.
  */
 
-GenTree* Compiler::optAssertionProp(ASSERT_VALARG_TP assertions, GenTree* tree, GenTreeStmt* stmt)
+GenTree* Compiler::optAssertionProp(ASSERT_VALARG_TP assertions, GenTree* tree, Statement* stmt)
 {
     switch (tree->gtOper)
     {
@@ -4516,7 +4516,7 @@ ASSERT_TP* Compiler::optComputeAssertionGen()
         GenTree*  jtrue    = nullptr;
 
         // Walk the statement trees in this basic block.
-        for (GenTreeStmt* stmt = block->firstStmt(); stmt != nullptr; stmt = stmt->getNextStmt())
+        for (Statement* stmt = block->firstStmt(); stmt != nullptr; stmt = stmt->getNextStmt())
         {
             for (GenTree* tree = stmt->gtStmtList; tree != nullptr; tree = tree->gtNext)
             {
@@ -4648,10 +4648,10 @@ ASSERT_TP* Compiler::optInitAssertionDataflowFlags()
 // Callback data for the VN based constant prop visitor.
 struct VNAssertionPropVisitorInfo
 {
-    Compiler*    pThis;
-    GenTreeStmt* stmt;
-    BasicBlock*  block;
-    VNAssertionPropVisitorInfo(Compiler* pThis, BasicBlock* block, GenTreeStmt* stmt)
+    Compiler*   pThis;
+    Statement*  stmt;
+    BasicBlock* block;
+    VNAssertionPropVisitorInfo(Compiler* pThis, BasicBlock* block, Statement* stmt)
         : pThis(pThis), stmt(stmt), block(block)
     {
     }
@@ -4774,7 +4774,7 @@ GenTree* Compiler::optVNConstantPropOnJTrue(BasicBlock* block, GenTree* test)
     // these side effects from the JTrue stmt before insert them back here.
     while (sideEffList != nullptr)
     {
-        GenTreeStmt* newStmt;
+        Statement* newStmt;
         if (sideEffList->OperGet() == GT_COMMA)
         {
             newStmt     = fgInsertTreeNearEnd(block, sideEffList->gtGetOp1());
@@ -4813,7 +4813,7 @@ GenTree* Compiler::optVNConstantPropOnJTrue(BasicBlock* block, GenTree* test)
 //    evaluates to constant, then the tree is replaced by its side effects and
 //    the constant node.
 //
-Compiler::fgWalkResult Compiler::optVNConstantPropCurStmt(BasicBlock* block, GenTreeStmt* stmt, GenTree* tree)
+Compiler::fgWalkResult Compiler::optVNConstantPropCurStmt(BasicBlock* block, Statement* stmt, GenTree* tree)
 {
     // Don't propagate floating-point constants into a TYP_STRUCT LclVar
     // This can occur for HFA return values (see hfa_sf3E_r.exe)
@@ -4923,7 +4923,7 @@ Compiler::fgWalkResult Compiler::optVNConstantPropCurStmt(BasicBlock* block, Gen
 //    indirections. This is different from flow based assertions and helps
 //    unify VN based constant prop and non-null prop in a single pre-order walk.
 //
-void Compiler::optVnNonNullPropCurStmt(BasicBlock* block, GenTreeStmt* stmt, GenTree* tree)
+void Compiler::optVnNonNullPropCurStmt(BasicBlock* block, Statement* stmt, GenTree* tree)
 {
     ASSERT_TP empty   = BitVecOps::UninitVal();
     GenTree*  newTree = nullptr;
@@ -4977,7 +4977,7 @@ Compiler::fgWalkResult Compiler::optVNAssertionPropCurStmtVisitor(GenTree** ppTr
  *   Returns the skipped next stmt if the current statement or next few
  *   statements got removed, else just returns the incoming stmt.
  */
-GenTreeStmt* Compiler::optVNAssertionPropCurStmt(BasicBlock* block, GenTreeStmt* stmt)
+Statement* Compiler::optVNAssertionPropCurStmt(BasicBlock* block, Statement* stmt)
 {
     // TODO-Review: EH successor/predecessor iteration seems broken.
     // See: SELF_HOST_TESTS_ARM\jit\Directed\ExcepFilters\fault\fault.exe
@@ -4987,7 +4987,7 @@ GenTreeStmt* Compiler::optVNAssertionPropCurStmt(BasicBlock* block, GenTreeStmt*
     }
 
     // Preserve the prev link before the propagation and morph.
-    GenTreeStmt* prev = (stmt == block->firstStmt()) ? nullptr : stmt->getPrevStmt();
+    Statement* prev = (stmt == block->firstStmt()) ? nullptr : stmt->getPrevStmt();
 
     // Perform VN based assertion prop first, in case we don't find
     // anything in assertion gen.
@@ -5003,7 +5003,7 @@ GenTreeStmt* Compiler::optVNAssertionPropCurStmt(BasicBlock* block, GenTreeStmt*
 
     // Check if propagation removed statements starting from current stmt.
     // If so, advance to the next good statement.
-    GenTreeStmt* nextStmt = (prev == nullptr) ? block->firstStmt() : prev->getNextStmt();
+    Statement* nextStmt = (prev == nullptr) ? block->firstStmt() : prev->getNextStmt();
     return nextStmt;
 }
 
@@ -5038,7 +5038,7 @@ void Compiler::optAssertionPropMain()
 
         fgRemoveRestOfBlock = false;
 
-        GenTreeStmt* stmt = block->firstStmt();
+        Statement* stmt = block->firstStmt();
         while (stmt != nullptr)
         {
             // We need to remove the rest of the block.
@@ -5051,7 +5051,7 @@ void Compiler::optAssertionPropMain()
             else
             {
                 // Perform VN based assertion prop before assertion gen.
-                GenTreeStmt* nextStmt = optVNAssertionPropCurStmt(block, stmt);
+                Statement* nextStmt = optVNAssertionPropCurStmt(block, stmt);
 
                 // Propagation resulted in removal of the remaining stmts, perform it.
                 if (fgRemoveRestOfBlock)
@@ -5141,7 +5141,7 @@ void Compiler::optAssertionPropMain()
         fgRemoveRestOfBlock = false;
 
         // Walk the statement trees in this basic block
-        GenTreeStmt* stmt = block->FirstNonPhiDef();
+        Statement* stmt = block->FirstNonPhiDef();
         while (stmt != nullptr)
         {
             // Propagation tells us to remove the rest of the block. Remove it.
@@ -5154,7 +5154,7 @@ void Compiler::optAssertionPropMain()
 
             // Preserve the prev link before the propagation and morph, to check if propagation
             // removes the current stmt.
-            GenTreeStmt* prevStmt = (stmt == block->firstStmt()) ? nullptr : stmt->getPrevStmt();
+            Statement* prevStmt = (stmt == block->firstStmt()) ? nullptr : stmt->getPrevStmt();
 
             optAssertionPropagatedCurrentStmt = false; // set to true if a assertion propagation took place
                                                        // and thus we must morph, set order, re-link
@@ -5203,8 +5203,8 @@ void Compiler::optAssertionPropMain()
 
             // Check if propagation removed statements starting from current stmt.
             // If so, advance to the next good statement.
-            GenTreeStmt* nextStmt = (prevStmt == nullptr) ? block->firstStmt() : prevStmt->getNextStmt();
-            stmt                  = (stmt == nextStmt) ? stmt->getNextStmt() : nextStmt;
+            Statement* nextStmt = (prevStmt == nullptr) ? block->firstStmt() : prevStmt->getNextStmt();
+            stmt                = (stmt == nextStmt) ? stmt->getNextStmt() : nextStmt;
         }
         optAssertionPropagatedCurrentStmt = false; // clear it back as we are done with stmts.
     }
