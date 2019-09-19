@@ -7596,13 +7596,8 @@ private:
         , m_zeroDblRegs(RBM_NONE)
 #ifdef DEBUG
         , m_needToZeroStack(false)
-        , m_poisonIntRegs(RBM_NONE)
-        , m_poisonFltRegs(RBM_NONE)
-        , m_poisonDblRegs(RBM_NONE)
-        , m_poisoning(true)
-        , m_preciseStackInit(true)
+        , m_poisoning(false)
         , m_poisoningLocs(compiler->getAllocatorDebugOnly())
-        , m_preciseZeroingLocs(compiler->getAllocatorDebugOnly())
 #endif
     {
     }
@@ -7612,12 +7607,11 @@ private:
 
 #ifdef DEBUG
     void PoisonStack() const;
-    void PoisonRegisters() const;
 
     void RecordVarPoisoning(LclVarDsc* varDsc, unsigned varNum);
 #endif // DEBUG
 
-    void RecordStackInit(int low, int high DEBUGARG(bool poison));
+    void RecordStackInit(int low, int high);
 
     CodeGen*  m_codeGen;
     Compiler* m_compiler;
@@ -7633,18 +7627,12 @@ private:
 #ifdef DEBUG
     bool m_needToZeroStack; // Is any stack location that must be initialized to 0?
 
-    regMaskTP m_poisonIntRegs;
-    regMaskTP m_poisonFltRegs;
-    regMaskTP m_poisonDblRegs;
-
     bool m_poisoning;
-    bool m_preciseStackInit;
 
     typedef jitstd::pair<int, int> StackLocation;
     typedef jitstd::vector<StackLocation> StackLocations;
 
     StackLocations m_poisoningLocs;
-    StackLocations m_preciseZeroingLocs;
 #endif
 };
 
@@ -7693,7 +7681,7 @@ PrologInitHelper PrologInitHelper::GetPrologInitHelper(CodeGen* codeGen, Compile
         if (!varDsc->lvMustInit)
         {
 #ifdef DEBUG
-            if (initHelper.m_poisoning)
+            if (varDsc->lvAddrExposed && initHelper.m_poisoning)
             {
                 initHelper.RecordVarPoisoning(varDsc, varNum);
             }
@@ -7719,7 +7707,7 @@ PrologInitHelper PrologInitHelper::GetPrologInitHelper(CodeGen* codeGen, Compile
                         // Upper DWORD is on the stack, and needs to be initialized.
                         int loOffs = varDsc->lvStkOffs + sizeof(int);
                         int hiOffs = varDsc->lvStkOffs + compiler->lvaLclSize(varNum);
-                        initHelper.RecordStackInit(loOffs, hiOffs DEBUGARG(false));
+                        initHelper.RecordStackInit(loOffs, hiOffs);
                     }
                 }
             }
@@ -7736,7 +7724,7 @@ PrologInitHelper PrologInitHelper::GetPrologInitHelper(CodeGen* codeGen, Compile
         {
             int loOffs = varDsc->lvStkOffs;
             int hiOffs = varDsc->lvStkOffs + compiler->lvaLclSize(varNum);
-            initHelper.RecordStackInit(loOffs, hiOffs DEBUGARG(false));
+            initHelper.RecordStackInit(loOffs, hiOffs);
         }
     }
 
@@ -7765,7 +7753,7 @@ PrologInitHelper PrologInitHelper::GetPrologInitHelper(CodeGen* codeGen, Compile
         noway_assert(!codeGen->isFramePointerUsed() || loOffs != 0);
 #endif // !defined(_TARGET_AMD64_)
 
-        initHelper.RecordStackInit(loOffs, hiOffs DEBUGARG(false));
+        initHelper.RecordStackInit(loOffs, hiOffs);
     }
 
     assert((codeGen->genGetInitStackLocalCount() > 0) == initHelper.m_needToZeroStack);
@@ -7791,16 +7779,16 @@ void PrologInitHelper::InitStack(regNumber initReg, bool* pInitRegZeroed) const
         ZeroStack(initReg, pInitRegZeroed);
     }
 #ifdef DEBUG
-    PoisonStack();
+    if (m_poisoning)
+    {
+        PoisonStack();
+    }
 #endif // DEBUG
 }
 
 void PrologInitHelper::InitRegisters(regNumber initReg, bool* pInitRegZeroed) const
 {
     ZeroRegisters(initReg, pInitRegZeroed);
-#ifdef DEBUG
-    PoisonRegisters();
-#endif // DEBUG
 }
 
 void PrologInitHelper::ZeroStack(regNumber initReg, bool* pInitRegZeroed) const
@@ -7864,89 +7852,60 @@ void PrologInitHelper::ZeroRegisters(regNumber initReg, bool* pInitRegZeroed) co
 #ifdef DEBUG
 void PrologInitHelper::PoisonStack() const
 {
-}
-
-void PrologInitHelper::PoisonRegisters() const
-{
+    for (auto stackLoc : m_poisoningLocs)
+    {
+    }
 }
 
 void PrologInitHelper::RecordVarPoisoning(LclVarDsc* varDsc, unsigned varNum)
 {
-    assert(!varDsc->lvMustInit);
+    assert(!varDsc->lvMustInit && varDsc->lvAddrExposed);
     if (varDsc->lvIsInReg())
     {
         regMaskTP regMask = genRegMask(varDsc->lvRegNum);
         if (!varDsc->IsFloatRegType())
         {
-            m_poisonIntRegs |= regMask;
 
             if (varTypeIsMultiReg(varDsc))
             {
-                if (varDsc->lvOtherReg != REG_STK)
-                {
-                    m_poisonIntRegs |= genRegMask(varDsc->lvOtherReg);
-                }
-                else
+                if (varDsc->lvOtherReg == REG_STK)
                 {
                     // Upper DWORD is on the stack, and needs to be initialized.
                     int loOffs = varDsc->lvStkOffs + sizeof(int);
                     int hiOffs = varDsc->lvStkOffs + m_compiler->lvaLclSize(varNum);
-                    RecordStackInit(loOffs, hiOffs DEBUGARG(false));
+
+                    StackLocation sl(loOffs, hiOffs);
+                    m_poisoningLocs.push_back(sl);
                 }
             }
-        }
-        else if (varDsc->TypeGet() == TYP_DOUBLE)
-        {
-            m_poisonDblRegs |= regMask;
-        }
-        else
-        {
-            m_poisonFltRegs |= regMask;
         }
     }
     else
     {
         int loOffs = varDsc->lvStkOffs;
         int hiOffs = varDsc->lvStkOffs + m_compiler->lvaLclSize(varNum);
-        RecordStackInit(loOffs, hiOffs, true);
-    }
-}
 
-#endif // DEBUG
-
-void PrologInitHelper::RecordStackInit(int low, int high DEBUGARG(bool poisonThisInterval))
-{
-#ifdef DEBUG
-    if (!poisonThisInterval)
-#endif // DEBUG
-    {
-        INDEBUG(m_needToZeroStack = true;)
-
-        if (low < m_stackLow)
-        {
-            m_stackLow = low;
-        }
-        if (high > m_stackHigh)
-        {
-            m_stackHigh = high;
-        }
-    }
-#ifdef DEBUG
-    if (poisonThisInterval)
-    {
-        assert(m_poisoning);
-        StackLocation sl(low, high);
+        StackLocation sl(loOffs, hiOffs);
         m_poisoningLocs.push_back(sl);
     }
-    else if (m_preciseStackInit)
-    {
-        StackLocation sl(low, high);
-        m_preciseZeroingLocs.push_back(sl);
-    }
-#endif // DEBUG
-}
 }
 
+#endif // DEBUG
+
+void PrologInitHelper::RecordStackInit(int low, int high)
+{
+    INDEBUG(m_needToZeroStack = true;)
+
+    if (low < m_stackLow)
+    {
+        m_stackLow = low;
+    }
+    if (high > m_stackHigh)
+    {
+        m_stackHigh = high;
+    }
+}
+}
 /*****************************************************************************
  *
  *  Generates code for a function prolog.
