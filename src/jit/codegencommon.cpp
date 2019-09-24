@@ -7596,7 +7596,7 @@ private:
         , m_zeroDblRegs(RBM_NONE)
 #ifdef DEBUG
         , m_needToZeroStack(false)
-        , m_poisoning(false)
+        , m_poisoning(true)
         , m_poisoningLocs(compiler->getAllocatorDebugOnly())
 #endif
     {
@@ -7607,6 +7607,19 @@ private:
 
 #ifdef DEBUG
     void PoisonStack() const;
+
+    struct StackLocation
+    {
+        StackLocation(unsigned varNum, int from, int to) : m_varNum(varNum), m_from(from), m_to(to)
+        {
+        }
+
+        unsigned m_varNum;
+        int m_from;
+        int m_to;
+    };
+
+    void PoisonStack(StackLocation& st) const;
 
     void RecordVarPoisoning(LclVarDsc* varDsc, unsigned varNum);
 #endif // DEBUG
@@ -7629,7 +7642,8 @@ private:
 
     bool m_poisoning;
 
-    typedef jitstd::pair<int, int> StackLocation;
+
+
     typedef jitstd::vector<StackLocation> StackLocations;
 
     StackLocations m_poisoningLocs;
@@ -7854,7 +7868,32 @@ void PrologInitHelper::PoisonStack() const
 {
     for (auto stackLoc : m_poisoningLocs)
     {
+        PoisonStack(stackLoc);
     }
+}
+
+void PrologInitHelper::PoisonStack(PrologInitHelper::StackLocation& st) const
+{
+    emitter* emit = m_codeGen->getEmitter();
+
+    int i;
+    for (i = st.m_from; i + REGSIZE_BYTES <= st.m_to; i += REGSIZE_BYTES)
+    {
+        int offset = i - st.m_from;
+        emit->emitIns_S_I(m_codeGen->ins_Store(TYP_I_IMPL), EA_PTRSIZE, st.m_varNum, offset, 0xCECECECE);
+    }
+
+#ifdef _TARGET_64BIT_
+    assert(i == st.m_to || (i + sizeof(int) == st.m_to));
+    if (i != st.m_to)
+    {
+        int offset = i - st.m_from;
+        emit->emitIns_S_I(m_codeGen->ins_Store(TYP_INT), EA_4BYTE, st.m_varNum, offset, 0xCECECECE);
+        i += sizeof(int);
+    }
+#endif // _TARGET_64BIT_
+    assert(i == st.m_to);
+
 }
 
 void PrologInitHelper::RecordVarPoisoning(LclVarDsc* varDsc, unsigned varNum)
@@ -7874,7 +7913,7 @@ void PrologInitHelper::RecordVarPoisoning(LclVarDsc* varDsc, unsigned varNum)
                     int loOffs = varDsc->lvStkOffs + sizeof(int);
                     int hiOffs = varDsc->lvStkOffs + m_compiler->lvaLclSize(varNum);
 
-                    StackLocation sl(loOffs, hiOffs);
+                    StackLocation sl(varNum, loOffs, hiOffs);
                     m_poisoningLocs.push_back(sl);
                 }
             }
@@ -7885,7 +7924,7 @@ void PrologInitHelper::RecordVarPoisoning(LclVarDsc* varDsc, unsigned varNum)
         int loOffs = varDsc->lvStkOffs;
         int hiOffs = varDsc->lvStkOffs + m_compiler->lvaLclSize(varNum);
 
-        StackLocation sl(loOffs, hiOffs);
+        StackLocation sl(varNum, loOffs, hiOffs);
         m_poisoningLocs.push_back(sl);
     }
 }
