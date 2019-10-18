@@ -1,0 +1,2 @@
+area-CodeGen:
+  - src/jit/**/*
