@@ -1565,6 +1565,7 @@ typedef unsigned char   regNumberSmall;
   #error Unsupported or unset target architecture
 #endif
 
+
 #ifdef _TARGET_XARCH_
 
   #define JMP_DIST_SMALL_MAX_NEG  (-128)
