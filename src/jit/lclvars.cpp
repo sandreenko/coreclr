@@ -1983,7 +1983,8 @@ Compiler::lvaStructFieldInfo Compiler::StructPromotionHelper::GetFieldInfo(CORIN
             fieldInfo.fldType = compiler->getSIMDTypeForSize(simdSize);
             fieldInfo.fldSize = simdSize;
 #ifdef DEBUG
-            retypedFieldsMap.Set(fieldInfo.fldHnd, fieldInfo.fldType, RetypedAsScalarFieldsMap::Overwrite);
+            retypedFieldsMap.Set(fieldInfo.fldHnd,
+                                 fieldInfo.fldType DEBUGARG(RetypedAsScalarFieldsMap::SetKind::Overwrite));
 #endif // DEBUG
         }
     }
@@ -2085,7 +2086,7 @@ bool Compiler::StructPromotionHelper::TryPromoteStructField(lvaStructFieldInfo& 
     fieldInfo.fldType = fieldVarType;
     fieldInfo.fldSize = fieldSize;
 #ifdef DEBUG
-    retypedFieldsMap.Set(fieldInfo.fldHnd, fieldInfo.fldType, RetypedAsScalarFieldsMap::Overwrite);
+    retypedFieldsMap.Set(fieldInfo.fldHnd, fieldInfo.fldType DEBUGARG(RetypedAsScalarFieldsMap::SetKind::Overwrite));
 #endif // DEBUG
     return true;
 }

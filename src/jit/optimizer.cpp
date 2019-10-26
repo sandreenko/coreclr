@@ -3758,7 +3758,7 @@ void Compiler::optUnrollLoops()
                 {
                     BasicBlock* newBlock = insertAfter =
                         fgNewBBafter(block->bbJumpKind, insertAfter, /*extendRegion*/ true);
-                    blockMap.Set(block, newBlock, BlockToBlockMap::Overwrite);
+                    blockMap.Set(block, newBlock DEBUGARG(BlockToBlockMap::SetKind::Overwrite));
 
                     if (!BasicBlock::CloneBlockState(this, newBlock, block, lvar, lval))
                     {
