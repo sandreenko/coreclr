@@ -6282,7 +6282,7 @@ public:
     typedef ArrayStack<GenTree*> GenTreePtrStack;
     typedef JitHashTable<unsigned, JitSmallPrimitiveKeyFuncs<unsigned>, GenTreePtrStack*> LclNumToGenTreePtrStack;
 
-    typedef JitHashTable<unsigned, JitSmallPrimitiveKeyFuncs<unsigned>, bool>       LclVarsSet;
+    typedef JitHashTable<unsigned, JitSmallPrimitiveKeyFuncs<unsigned>, GenTree*>   LclVarsSet;
     typedef JitHashTable<ValueNum, JitSmallPrimitiveKeyFuncs<ValueNum>, LclVarsSet> VNNumToLclVarsSet;
 
     // Kill set to track variables with intervening definitions.
@@ -6300,6 +6300,8 @@ public:
     bool optIsNewDef(GenTree* tree, LclNumToGenTreePtrStack* curSsaName);
     void optAddDef(GenTree* tree, LclNumToGenTreePtrStack* curSsaName, VNNumToLclVarsSet* curVNs);
     void optRemoveDef(GenTree* tree, LclNumToGenTreePtrStack* curSsaName, VNNumToLclVarsSet* curVNs);
+    void optRemoveVNDef(ValueNum vn, unsigned lclNum, VNNumToLclVarsSet* curVNs);
+    void optAddVNDef(GenTree* tree, ValueNum vn, unsigned lclNum, VNNumToLclVarsSet* curVNs);
     int optCopyProp_LclVarScore(LclVarDsc* lclVarDsc, LclVarDsc* copyVarDsc, bool preferOp2);
     void optVnCopyProp();
     INDEBUG(void optDumpCopyPropStack(LclNumToGenTreePtrStack* curSsaName));

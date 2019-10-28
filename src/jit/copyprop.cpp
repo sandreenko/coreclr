@@ -31,7 +31,10 @@ void Compiler::optBlockCopyPropPopStacks(BasicBlock*              block,
                                          LclNumToGenTreePtrStack* curSsaName,
                                          VNNumToLclVarsSet*       curVNs)
 {
-    for (Statement* stmt : block->Statements())
+    // for (Statement* stmt : block->Statements())
+    Statement* last = block->lastStmt();
+    Statement* stmt = block->lastStmt();
+    while (stmt != nullptr)
     {
         for (GenTree* tree = stmt->GetTreeList(); tree != nullptr; tree = tree->gtNext)
         {
@@ -43,6 +46,12 @@ void Compiler::optBlockCopyPropPopStacks(BasicBlock*              block,
             {
                 optRemoveDef(tree, curSsaName, curVNs);
             }
+        }
+
+        stmt = stmt->GetPrevStmt();
+        if (stmt == last)
+        {
+            break;
         }
     }
 }
@@ -153,11 +162,17 @@ void Compiler::optCopyProp(
 
     assert(tree->gtVNPair.GetConservative() != ValueNumStore::NoVN);
 
-    for (LclNumToGenTreePtrStack::KeyIterator iter = curSsaName->Begin(); !iter.Equal(curSsaName->End()); ++iter)
+    // for (LclNumToGenTreePtrStack::KeyIterator iter = curSsaName->Begin(); !iter.Equal(curSsaName->End()); ++iter)
+    LclVarsSet* lclVarsSet = curVNs->LookupPointer(tree->gtVNPair.GetConservative());
+    if (lclVarsSet == nullptr)
+    {
+        return;
+    }
+    for (LclVarsSet::KeyIterator iter = lclVarsSet->Begin(); !iter.Equal(lclVarsSet->End()); ++iter)
     {
         unsigned newLclNum = iter.Get();
 
-        GenTree* op = iter.GetValue()->Top();
+        GenTree* op = iter.GetValue();
 
         // Nothing to do if same.
         if (lclNum == newLclNum)
@@ -400,8 +415,19 @@ void Compiler::optAddDef(GenTree* tree, LclNumToGenTreePtrStack* curSsaName, VNN
     {
         stack = new (curSsaName->GetAllocator()) GenTreePtrStack(curSsaName->GetAllocator());
     }
+
+    if (!stack->Empty())
+    {
+        auto prevTree = stack->Top();
+        auto prevVN   = prevTree->GetVN(VNK_Conservative);
+        optRemoveVNDef(prevVN, lclNum, curVNs);
+    }
+
     stack->Push(tree);
     curSsaName->Set(lclNum, stack DEBUGARG(LclNumToGenTreePtrStack::SetKind::Overwrite));
+
+    auto currVN = tree->GetVN(VNK_Conservative);
+    optAddVNDef(tree, currVN, lclNum, curVNs);
 }
 
 void Compiler::optRemoveDef(GenTree* tree, LclNumToGenTreePtrStack* curSsaName, VNNumToLclVarsSet* curVNs)
@@ -413,9 +439,57 @@ void Compiler::optRemoveDef(GenTree* tree, LclNumToGenTreePtrStack* curSsaName, 
     assert(stack != nullptr);
 
     stack->Pop();
+
+    auto currVN = tree->GetVN(VNK_Conservative);
+    optRemoveVNDef(currVN, lclNum, curVNs);
+
     if (stack->Empty())
     {
         curSsaName->Remove(lclNum);
+    }
+    else
+    {
+        // Restore the previous VN value.
+        auto prevTree = stack->Top();
+        auto prevVN   = prevTree->GetVN(VNK_Conservative);
+
+        optAddVNDef(tree, prevVN, lclNum, curVNs);
+    }
+}
+
+void Compiler::optRemoveVNDef(ValueNum vn, unsigned lclNum, VNNumToLclVarsSet* curVNs)
+{
+    if (verbose)
+    {
+        printf("remove %d %d }\n", vn, lclNum);
+    }
+    LclVarsSet* currSet = curVNs->LookupPointer(vn);
+    assert(currSet != nullptr);
+    assert(currSet->Lookup(lclNum));
+    currSet->Remove(lclNum);
+    if (currSet->GetCount() == 0)
+    {
+        // Can remove that set, but why would we do that?
+    }
+}
+
+void Compiler::optAddVNDef(GenTree* tree, ValueNum vn, unsigned lclNum, VNNumToLclVarsSet* curVNs)
+{
+    if (verbose)
+    {
+        printf("add %d %d {\n", vn, lclNum);
+    }
+
+    LclVarsSet* exisitingSet = curVNs->LookupPointer(vn);
+    if (exisitingSet != nullptr)
+    {
+        exisitingSet->Set(lclNum, tree);
+    }
+    else
+    {
+        LclVarsSet newSet(getAllocator());
+        newSet.Set(lclNum, tree);
+        curVNs->Set(vn, newSet);
     }
 }
 
