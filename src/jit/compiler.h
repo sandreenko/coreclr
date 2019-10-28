@@ -6297,6 +6297,9 @@ public:
     void optBlockCopyPropPopStacks(BasicBlock* block, LclNumToGenTreePtrStack* curSsaName, VNNumToLclVarsSet* curVNs);
     void optBlockCopyProp(BasicBlock* block, LclNumToGenTreePtrStack* curSsaName, VNNumToLclVarsSet* curVNs);
     bool optIsSsaLocal(GenTree* tree);
+    bool optIsNewDef(GenTree* tree, LclNumToGenTreePtrStack* curSsaName);
+    void optAddDef(GenTree* tree, LclNumToGenTreePtrStack* curSsaName, VNNumToLclVarsSet* curVNs);
+    void optRemoveDef(GenTree* tree, LclNumToGenTreePtrStack* curSsaName, VNNumToLclVarsSet* curVNs);
     int optCopyProp_LclVarScore(LclVarDsc* lclVarDsc, LclVarDsc* copyVarDsc, bool preferOp2);
     void optVnCopyProp();
     INDEBUG(void optDumpCopyPropStack(LclNumToGenTreePtrStack* curSsaName));

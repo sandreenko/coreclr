@@ -35,24 +35,13 @@ void Compiler::optBlockCopyPropPopStacks(BasicBlock*              block,
     {
         for (GenTree* tree = stmt->GetTreeList(); tree != nullptr; tree = tree->gtNext)
         {
-            if (!tree->IsLocal())
-            {
-                continue;
-            }
-            unsigned lclNum = tree->gtLclVarCommon.GetLclNum();
-            if (!lvaInSsa(lclNum))
+            if (!optIsSsaLocal(tree))
             {
                 continue;
             }
             if ((tree->gtFlags & GTF_VAR_DEF) != 0)
             {
-                GenTreePtrStack* stack = nullptr;
-                curSsaName->Lookup(lclNum, &stack);
-                stack->Pop();
-                if (stack->Empty())
-                {
-                    curSsaName->Remove(lclNum);
-                }
+                optRemoveDef(tree, curSsaName, curVNs);
             }
         }
     }
@@ -364,38 +353,69 @@ void Compiler::optBlockCopyProp(BasicBlock* block, LclNumToGenTreePtrStack* curS
         // This logic must be in sync with SSA renaming process.
         for (GenTree* tree = stmt->GetTreeList(); tree != nullptr; tree = tree->gtNext)
         {
-            if (!optIsSsaLocal(tree))
-            {
-                continue;
-            }
 
-            unsigned lclNum = tree->gtLclVarCommon.GetLclNum();
-
-            // As we encounter a definition add it to the stack as a live definition.
-            if ((tree->gtFlags & GTF_VAR_DEF) != 0)
+            if (optIsNewDef(tree, curSsaName))
             {
-                GenTreePtrStack* stack;
-                if (!curSsaName->Lookup(lclNum, &stack))
-                {
-                    stack = new (curSsaName->GetAllocator()) GenTreePtrStack(curSsaName->GetAllocator());
-                }
-                stack->Push(tree);
-                curSsaName->Set(lclNum, stack DEBUGARG(LclNumToGenTreePtrStack::SetKind::Overwrite));
-            }
-            // If we encounter first use of a param or this pointer add it as a live definition.
-            // Since they are always live, do it only once.
-            else if ((tree->gtOper == GT_LCL_VAR) && !(tree->gtFlags & GTF_VAR_USEASG) &&
-                     (lvaTable[lclNum].lvIsParam || lvaTable[lclNum].lvVerTypeInfo.IsThisPtr()))
-            {
-                GenTreePtrStack* stack;
-                if (!curSsaName->Lookup(lclNum, &stack))
-                {
-                    stack = new (curSsaName->GetAllocator()) GenTreePtrStack(curSsaName->GetAllocator());
-                    stack->Push(tree);
-                    curSsaName->Set(lclNum, stack);
-                }
+                optAddDef(tree, curSsaName, curVNs);
             }
         }
+    }
+}
+
+bool Compiler::optIsNewDef(GenTree* tree, LclNumToGenTreePtrStack* curSsaName)
+{
+    if (!optIsSsaLocal(tree))
+    {
+        return false;
+    }
+
+    if ((tree->gtFlags & GTF_VAR_DEF) != 0)
+    {
+        // As we encounter a definition add it to the stack as a live definition.
+        return true;
+    }
+
+    GenTreeLclVarCommon* lclVar  = tree->AsLclVarCommon();
+    LclVarDsc*           varDesc = lvaGetDesc(lclVar);
+
+    if (tree->OperIs(GT_LCL_VAR) && ((tree->gtFlags & GTF_VAR_USEASG) == 0) &&
+        (varDesc->lvIsParam || varDesc->lvVerTypeInfo.IsThisPtr()))
+    {
+        // If we encounter first use of a param or this pointer add it as a live definition.
+        // Since they are always live, do it only once.
+        if (curSsaName->LookupPointer(lclVar->GetLclNum()) == nullptr)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+void Compiler::optAddDef(GenTree* tree, LclNumToGenTreePtrStack* curSsaName, VNNumToLclVarsSet* curVNs)
+{
+    GenTreeLclVarCommon* lclVar = tree->AsLclVarCommon();
+    unsigned             lclNum = lclVar->GetLclNum();
+    GenTreePtrStack*     stack;
+    if (!curSsaName->Lookup(lclNum, &stack))
+    {
+        stack = new (curSsaName->GetAllocator()) GenTreePtrStack(curSsaName->GetAllocator());
+    }
+    stack->Push(tree);
+    curSsaName->Set(lclNum, stack DEBUGARG(LclNumToGenTreePtrStack::SetKind::Overwrite));
+}
+
+void Compiler::optRemoveDef(GenTree* tree, LclNumToGenTreePtrStack* curSsaName, VNNumToLclVarsSet* curVNs)
+{
+    unsigned         lclNum = tree->AsLclVarCommon()->GetLclNum();
+    GenTreePtrStack* stack  = nullptr;
+    curSsaName->Lookup(lclNum, &stack);
+
+    assert(stack != nullptr);
+
+    stack->Pop();
+    if (stack->Empty())
+    {
+        curSsaName->Remove(lclNum);
     }
 }
 
