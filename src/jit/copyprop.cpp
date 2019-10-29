@@ -36,7 +36,8 @@ void Compiler::optBlockCopyPropPopStacks(BasicBlock*              block,
     Statement* stmt = block->lastStmt();
     while (stmt != nullptr)
     {
-        for (GenTree* tree = stmt->GetTreeList(); tree != nullptr; tree = tree->gtNext)
+        GenTree* lastTree = stmt->GetRootNode();
+        for (GenTree* tree = lastTree; tree != nullptr; tree = tree->gtPrev)
         {
             if (!optIsSsaLocal(tree))
             {
@@ -459,10 +460,12 @@ void Compiler::optRemoveDef(GenTree* tree, LclNumToGenTreePtrStack* curSsaName, 
 
 void Compiler::optRemoveVNDef(ValueNum vn, unsigned lclNum, VNNumToLclVarsSet* curVNs)
 {
+#ifdef DEBUG
     if (verbose)
     {
         printf("remove %d %d }\n", vn, lclNum);
     }
+#endif
     LclVarsSet* currSet = curVNs->LookupPointer(vn);
     assert(currSet != nullptr);
     assert(currSet->Lookup(lclNum));
@@ -475,10 +478,12 @@ void Compiler::optRemoveVNDef(ValueNum vn, unsigned lclNum, VNNumToLclVarsSet* c
 
 void Compiler::optAddVNDef(GenTree* tree, ValueNum vn, unsigned lclNum, VNNumToLclVarsSet* curVNs)
 {
+#ifdef DEBUG
     if (verbose)
     {
         printf("add %d %d {\n", vn, lclNum);
     }
+#endif
 
     LclVarsSet* exisitingSet = curVNs->LookupPointer(vn);
     if (exisitingSet != nullptr)
